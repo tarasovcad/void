@@ -1,7 +1,7 @@
 import React from "react";
 import AppShell from "@/components/providers/AppShell";
 
-const page = () => {
+const page = async () => {
   return (
     <AppShell>
       <div></div>

@@ -24,6 +24,7 @@ const eslintConfig = defineConfig([
       ...security.configs.recommended.rules,
       "no-unused-vars": "off",
       "react-hooks/exhaustive-deps": "warn",
+      "react/no-unknown-property": "error",
       "@typescript-eslint/no-unused-vars": ["warn"],
       "unused-imports/no-unused-imports": "error",
       "unused-imports/no-unused-vars": [

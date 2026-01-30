@@ -12,8 +12,10 @@ import {InputGroup, InputGroupAddon, InputGroupInput} from "@/components/coss-ui
 function Header() {
   return (
     <div className="flex items-center justify-between border-b px-6 py-3.5">
-      <Image src="/logo/logo_light.svg" alt="Void Logo" width={24} height={24} />
-      <InputGroup className="w-full max-w-[300px]">
+      <div className="flex flex-1">
+        <Image src="/logo/logo_light.svg" alt="Void Logo" width={24} height={24} />
+      </div>
+      <InputGroup className="w-full max-w-[340px]">
         <InputGroupInput
           aria-label="Search"
           placeholder="Search"
@@ -30,14 +32,14 @@ function Header() {
             <path
               d="M13.3333 13.3333L10.751 10.751M10.751 10.751C11.6257 9.87633 12.1667 8.668 12.1667 7.33333C12.1667 4.66396 10.0027 2.5 7.33333 2.5C4.66396 2.5 2.5 4.66396 2.5 7.33333C2.5 10.0027 4.66396 12.1667 7.33333 12.1667C8.668 12.1667 9.87633 11.6257 10.751 10.751Z"
               stroke="currentColor"
-              stroke-width="1"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+              strokeWidth="1"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
           </svg>
         </InputGroupAddon>
       </InputGroup>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-1 items-center justify-end gap-3">
         <ThemeSwitch />
         <Button>Add new</Button>
       </div>
@@ -105,8 +107,8 @@ const NAV_ITEMS = [
         fill="none"
         xmlns="http://www.w3.org/2000/svg">
         <path
-          fill-rule="evenodd"
-          clip-rule="evenodd"
+          fillRule="evenodd"
+          clipRule="evenodd"
           d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22ZM12.75 7.75C12.75 7.33579 12.4142 7 12 7C11.5858 7 11.25 7.33579 11.25 7.75V12C11.25 12.1989 11.329 12.3897 11.4697 12.5303L14.2197 15.2803C14.5126 15.5732 14.9874 15.5732 15.2803 15.2803C15.5732 14.9874 15.5732 14.5126 15.2803 14.2197L12.75 11.6893V7.75Z"
           fill="currentColor"
         />
