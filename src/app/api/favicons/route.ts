@@ -1,4 +1,11 @@
 import {NextRequest, NextResponse} from "next/server";
+import {
+  fetchJsonWithTimeout,
+  fetchTextWithTimeout,
+  isRecord,
+  normalizeInputUrl,
+  stripWrappingQuotes,
+} from "@/lib/web-fetch";
 
 type IconSource = "html" | "manifest" | "fallback";
 
@@ -16,16 +23,6 @@ type FaviconResult = {
   }>;
 };
 
-function stripWrappingQuotes(value: string) {
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-  return value;
-}
-
 function parseAttributes(tag: string) {
   const attrs: Partial<Record<"href" | "rel" | "sizes" | "type", string>> = {};
   const re = /([a-zA-Z_:][a-zA-Z0-9_:\-]*)\s*=\s*(".*?"|'.*?'|[^\s>]+)/g;
@@ -42,39 +39,6 @@ function parseAttributes(tag: string) {
   return attrs;
 }
 
-function looksLikePrivateHostname(hostname: string) {
-  const h = hostname.toLowerCase();
-  if (h === "localhost" || h === "0.0.0.0" || h === "127.0.0.1" || h === "::1") return true;
-  if (h.endsWith(".local")) return true;
-
-  // Block obvious private IPv4 ranges if hostname is an IPv4 literal.
-  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
-  if (!ipv4) return false;
-  const parts = ipv4.slice(1).map((p) => Number(p));
-  if (parts.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return true;
-
-  const [a, b] = parts;
-  if (a === 10) return true;
-  if (a === 127) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  return false;
-}
-
-function normalizeInputUrl(input: string) {
-  const trimmed = input.trim();
-  if (!trimmed) throw new Error("Missing url");
-  const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
-
-  const u = new URL(withScheme);
-  if (u.protocol !== "http:" && u.protocol !== "https:") {
-    throw new Error("Only http/https URLs are supported");
-  }
-  if (!u.hostname) throw new Error("Invalid URL hostname");
-  if (looksLikePrivateHostname(u.hostname)) throw new Error("Hostname is not allowed");
-  return u;
-}
-
 // returns a new array where each URL appears only once.
 function uniqByUrl<T extends {url: string}>(items: T[]) {
   const seen = new Set<string>();
@@ -86,50 +50,6 @@ function uniqByUrl<T extends {url: string}>(items: T[]) {
     out.push(item);
   }
   return out;
-}
-
-async function fetchTextWithTimeout(url: string, timeoutMs: number) {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      redirect: "follow",
-      cache: "no-store",
-      headers: {
-        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "user-agent": "void-favicon-finder/1.0",
-      },
-      signal: controller.signal,
-    });
-    return res;
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-async function fetchJsonWithTimeout(url: string, timeoutMs: number) {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      redirect: "follow",
-      cache: "no-store",
-      headers: {
-        accept: "application/json,text/json,*/*;q=0.8",
-        "user-agent": "void-favicon-finder/1.0",
-      },
-      signal: controller.signal,
-    });
-    return res;
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
 }
 
 type ManifestIcon = {src: string; sizes?: string; type?: string};
@@ -153,7 +73,7 @@ function parseManifestIcons(manifest: unknown): ManifestIcon[] {
 }
 
 async function discoverFromManifest(manifestUrl: string) {
-  const res = await fetchJsonWithTimeout(manifestUrl, 6000);
+  const res = await fetchJsonWithTimeout(manifestUrl, 6000, {userAgent: "void-favicon-finder/1.0"});
   if (!res.ok) return [];
   const manifestJson: unknown = await res.json();
   const icons = parseManifestIcons(manifestJson);
@@ -360,7 +280,9 @@ export async function GET(request: NextRequest) {
     icons: [],
   };
   try {
-    const htmlRes = await fetchTextWithTimeout(normalized.toString(), 8000);
+    const htmlRes = await fetchTextWithTimeout(normalized.toString(), 8000, {
+      userAgent: "void-favicon-finder/1.0",
+    });
     result.finalUrl = htmlRes.url;
     const contentType = htmlRes.headers.get("content-type") ?? "";
     const isHtml = contentType.includes("text/html") || contentType.includes("application/xhtml");
