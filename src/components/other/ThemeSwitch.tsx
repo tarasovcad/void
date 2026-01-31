@@ -1,6 +1,6 @@
 "use client";
 
-import type React from "react";
+import React from "react";
 
 import {useTheme} from "next-themes";
 
@@ -111,7 +111,12 @@ const themes: ThemeOption[] = [
 
 export default function ThemeToggle() {
   const {theme, setTheme} = useTheme();
-  if (!theme) return null;
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!mounted) return null;
 
   return (
     <div

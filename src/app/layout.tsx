@@ -2,6 +2,8 @@ import type {Metadata} from "next";
 import {Inter} from "next/font/google";
 import "./globals.css";
 import {ThemeProvider} from "@/components/providers/ThemeProvider";
+import {ReactQueryProvider} from "@/components/providers/ReactQueryProvider";
+import {AnchoredToastProvider, ToastProvider} from "@/components/coss-ui/toast";
 
 const inter = Inter({subsets: ["latin"], variable: "--font-sans"});
 
@@ -23,7 +25,11 @@ export default function RootLayout({
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange>
-          {children}
+          <ReactQueryProvider>
+            <ToastProvider>
+              <AnchoredToastProvider>{children}</AnchoredToastProvider>
+            </ToastProvider>
+          </ReactQueryProvider>
         </ThemeProvider>
       </body>
     </html>

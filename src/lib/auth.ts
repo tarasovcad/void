@@ -10,14 +10,27 @@ export const auth = betterAuth({
   database: new Pool({connectionString: process.env.DATABASE_URL}),
   plugins: [
     emailOTP({
+      storeOTP: "hashed",
+      otpLength: 6,
+      expiresIn: 300,
+      allowedAttempts: 5,
       async sendVerificationOTP({email, otp, type}) {
-        if (type !== "sign-in") return;
-        await resend.emails.send({
-          from: process.env.AUTH_FROM_EMAIL!,
-          to: email,
-          subject: "Your login code",
-          text: `Your 6-digit code is: ${otp}\n\nThis code expires soon.`,
-        });
+        const resendApiKey = process.env.RESEND_API_KEY;
+        if (!resendApiKey) {
+          console.error("[auth] Missing RESEND_API_KEY; cannot send OTP email.");
+          return;
+        }
+
+        void resend.emails
+          .send({
+            from: "Your App <onboarding@resend.dev>",
+            to: email,
+            subject: `Your sign-in code: ${otp}`,
+            text: `Your one-time sign-in code is: ${otp}\n\nIt expires in 5 minutes.`,
+          })
+          .catch((err) => {
+            console.error("[auth] Failed to send OTP email.", err);
+          });
       },
     }),
     nextCookies(),
