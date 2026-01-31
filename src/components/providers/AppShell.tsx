@@ -13,6 +13,18 @@ import {Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger} from "@/component
 import {useMutation} from "@tanstack/react-query";
 import {authClient} from "@/components/utils/better-auth/auth-client";
 import {toastManager} from "@/components/coss-ui/toast";
+import {
+  Dialog,
+  DialogClose,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "@/components/coss-ui/dialog";
+import {Input} from "@/components/coss-ui/input";
+import {Textarea} from "../coss-ui/textarea";
+import {useTestItemStore} from "@/lib/testItemStore";
 
 type AppShellSession = {
   session: Session;
@@ -77,7 +89,7 @@ function Header({session}: {session: AppShellSession}) {
       </InputGroup>
       <div className="flex flex-1 items-center justify-end gap-2">
         <ThemeSwitch />
-        <Button>Add new</Button>
+
         {session ? (
           <Menu>
             <MenuTrigger
@@ -357,12 +369,99 @@ const Sidebar = () => {
 };
 
 const AppShell = ({children, session}: {children: React.ReactNode; session: AppShellSession}) => {
+  const [addItemOpen, setAddItemOpen] = React.useState(false);
+  const [addItemForm, setAddItemForm] = React.useState({
+    url: "",
+    title: "",
+    description: "",
+  });
+  const setTestItem = useTestItemStore((s) => s.setItem);
+
+  const closeAndResetAddItem = React.useCallback(() => {
+    setAddItemOpen(false);
+    setAddItemForm({url: "", title: "", description: ""});
+  }, []);
+
+  const submitAddItem = React.useCallback(() => {
+    setTestItem(addItemForm);
+    closeAndResetAddItem();
+  }, [addItemForm, closeAndResetAddItem, setTestItem]);
+
   return (
     <main className="flex h-dvh min-h-screen flex-col">
       <Header session={session} />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar />
         <div className="min-h-0 flex-1">{children}</div>
+      </div>
+      <div className="absolute right-6 bottom-6">
+        <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
+          <Button
+            variant="default"
+            size="icon-lg"
+            className="size-12 rounded-full"
+            onClick={() => setAddItemOpen(true)}>
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 20 20"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg">
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M10 1C10.4142 1 10.75 1.33579 10.75 1.75V9.25H18.25C18.6642 9.25 19 9.5858 19 10C19 10.4142 18.6642 10.75 18.25 10.75H10.75V18.25C10.75 18.6642 10.4142 19 10 19C9.5858 19 9.25 18.6642 9.25 18.25V10.75H1.75C1.33579 10.75 1 10.4142 1 10C1 9.5858 1.33579 9.25 1.75 9.25H9.25V1.75C9.25 1.33579 9.5858 1 10 1Z"
+                fill="currentColor"
+              />
+            </svg>
+          </Button>
+
+          <DialogPopup className="duration-250 ease-in-out data-ending-style:translate-y-2 data-ending-style:scale-98 data-ending-style:opacity-0 data-starting-style:translate-y-2 data-starting-style:scale-98 data-starting-style:opacity-0">
+            <DialogHeader>
+              <DialogTitle>Add item</DialogTitle>
+            </DialogHeader>
+
+            <DialogPanel>
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <div className="text-sm font-medium">URL</div>
+                  <Input
+                    type="url"
+                    placeholder="https://example.com"
+                    value={addItemForm.url}
+                    onChange={(e) => setAddItemForm((s) => ({...s, url: e.target.value}))}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <div className="text-sm font-medium">Title</div>
+                  <Input
+                    type="text"
+                    placeholder="Title"
+                    value={addItemForm.title}
+                    onChange={(e) => setAddItemForm((s) => ({...s, title: e.target.value}))}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <div className="text-sm font-medium">Description</div>
+                  <Textarea
+                    placeholder="Description"
+                    value={addItemForm.description}
+                    onChange={(e) => setAddItemForm((s) => ({...s, description: e.target.value}))}
+                  />
+                </div>
+              </div>
+            </DialogPanel>
+
+            <DialogFooter>
+              <DialogClose render={<Button variant="ghost" />} onClick={closeAndResetAddItem}>
+                Cancel
+              </DialogClose>
+              <Button onClick={submitAddItem}>Add item</Button>
+            </DialogFooter>
+          </DialogPopup>
+        </Dialog>
       </div>
     </main>
   );
