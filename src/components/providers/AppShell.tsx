@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, {useState} from "react";
 import {Button, buttonVariants} from "../shadcn/button";
 import Image from "next/image";
 import ThemeSwitch from "../other/ThemeSwitch";
@@ -13,6 +13,8 @@ import {Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger} from "@/component
 import {useMutation} from "@tanstack/react-query";
 import {authClient} from "@/components/utils/better-auth/auth-client";
 import {toastManager} from "@/components/coss-ui/toast";
+import {addBookmark, type AddBookmarkResult} from "@/app/actions/bookmarks";
+import {z} from "zod";
 import {
   Dialog,
   DialogClose,
@@ -23,8 +25,6 @@ import {
   DialogTitle,
 } from "@/components/coss-ui/dialog";
 import {Input} from "@/components/coss-ui/input";
-import {Textarea} from "../coss-ui/textarea";
-import {useTestItemStore} from "@/lib/testItemStore";
 
 type AppShellSession = {
   session: Session;
@@ -32,6 +32,20 @@ type AppShellSession = {
     email?: string | null;
   } | null;
 } | null;
+
+const addItemUrlSchema = z
+  .string()
+  .trim()
+  .min(1, "URL is required")
+  .url("Please enter a valid URL")
+  .refine((s) => {
+    try {
+      const u = new URL(s);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "URL must start with http:// or https://");
 
 function Header({session}: {session: AppShellSession}) {
   const email = session?.user?.email ?? null;
@@ -369,23 +383,44 @@ const Sidebar = () => {
 };
 
 const AppShell = ({children, session}: {children: React.ReactNode; session: AppShellSession}) => {
-  const [addItemOpen, setAddItemOpen] = React.useState(false);
-  const [addItemForm, setAddItemForm] = React.useState({
-    url: "",
-    title: "",
-    description: "",
+  const [addItemOpen, setAddItemOpen] = useState(false);
+  const [addItemUrl, setAddItemUrl] = useState("");
+  const [addItemUrlError, setAddItemUrlError] = useState<string | null>(null);
+  const router = useRouter();
+
+  const addItemMutation = useMutation<AddBookmarkResult, Error, {url: string}>({
+    mutationFn: async (input) => {
+      return await addBookmark(input);
+    },
+    onSuccess: (res) => {
+      toastManager.add({
+        title: "Bookmark added",
+        description: res.url,
+        type: "success",
+      });
+      setAddItemOpen(false);
+      setAddItemUrl("");
+      setAddItemUrlError(null);
+      router.refresh();
+    },
+    onError: (err) => {
+      toastManager.add({
+        title: "Submit failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        type: "error",
+      });
+    },
   });
-  const setTestItem = useTestItemStore((s) => s.setItem);
 
-  const closeAndResetAddItem = React.useCallback(() => {
-    setAddItemOpen(false);
-    setAddItemForm({url: "", title: "", description: ""});
-  }, []);
-
-  const submitAddItem = React.useCallback(() => {
-    setTestItem(addItemForm);
-    closeAndResetAddItem();
-  }, [addItemForm, closeAndResetAddItem, setTestItem]);
+  const validateAddItemUrl = (rawUrl: string) => {
+    const parsed = addItemUrlSchema.safeParse(rawUrl);
+    if (!parsed.success) {
+      setAddItemUrlError(parsed.error.issues[0]?.message ?? "Invalid URL");
+      return null;
+    }
+    setAddItemUrlError(null);
+    return parsed.data;
+  };
 
   return (
     <main className="flex h-dvh min-h-screen flex-col">
@@ -395,7 +430,17 @@ const AppShell = ({children, session}: {children: React.ReactNode; session: AppS
         <div className="min-h-0 flex-1">{children}</div>
       </div>
       <div className="absolute right-6 bottom-6">
-        <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
+        <Dialog
+          open={addItemOpen}
+          onOpenChange={(open) => {
+            setAddItemOpen(open);
+            if (!open) {
+              // Keep the URL, but clear validation UI when closing the dialog.
+              setTimeout(() => {
+                setAddItemUrlError(null);
+              }, 1000);
+            }
+          }}>
           <Button
             variant="default"
             size="icon-lg"
@@ -422,43 +467,48 @@ const AppShell = ({children, session}: {children: React.ReactNode; session: AppS
             </DialogHeader>
 
             <DialogPanel>
-              <div className="flex flex-col gap-4">
+              <form
+                className="flex flex-col gap-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const url = validateAddItemUrl(addItemUrl);
+                  if (!url) return;
+                  addItemMutation.mutate({url});
+                }}>
                 <div className="flex flex-col gap-2">
                   <div className="text-sm font-medium">URL</div>
                   <Input
                     type="url"
                     placeholder="https://example.com"
-                    value={addItemForm.url}
-                    onChange={(e) => setAddItemForm((s) => ({...s, url: e.target.value}))}
+                    value={addItemUrl}
+                    aria-invalid={!!addItemUrlError}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setAddItemUrl(next);
+                      if (addItemUrlError) validateAddItemUrl(next);
+                    }}
                   />
+                  {addItemUrlError ? (
+                    <div className="text-destructive text-sm" role="alert">
+                      {addItemUrlError}
+                    </div>
+                  ) : null}
                 </div>
-
-                <div className="flex flex-col gap-2">
-                  <div className="text-sm font-medium">Title</div>
-                  <Input
-                    type="text"
-                    placeholder="Title"
-                    value={addItemForm.title}
-                    onChange={(e) => setAddItemForm((s) => ({...s, title: e.target.value}))}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <div className="text-sm font-medium">Description</div>
-                  <Textarea
-                    placeholder="Description"
-                    value={addItemForm.description}
-                    onChange={(e) => setAddItemForm((s) => ({...s, description: e.target.value}))}
-                  />
-                </div>
-              </div>
+              </form>
             </DialogPanel>
 
             <DialogFooter>
-              <DialogClose render={<Button variant="ghost" />} onClick={closeAndResetAddItem}>
-                Cancel
-              </DialogClose>
-              <Button onClick={submitAddItem}>Add item</Button>
+              <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+              <Button
+                type="button"
+                disabled={addItemMutation.isPending}
+                onClick={() => {
+                  const url = validateAddItemUrl(addItemUrl);
+                  if (!url) return;
+                  addItemMutation.mutate({url});
+                }}>
+                Submit
+              </Button>
             </DialogFooter>
           </DialogPopup>
         </Dialog>

@@ -1,5 +1,12 @@
 import {NextRequest, NextResponse} from "next/server";
-import {fetchTextWithTimeout, normalizeInputUrl, stripWrappingQuotes} from "@/lib/web-fetch";
+import {
+  extractDescriptionFromHtml,
+  extractOgImageUrlFromHtml,
+  extractTitleFromHtml,
+  fetchTextWithTimeout,
+  isHtmlContentType,
+  normalizeInputUrl,
+} from "@/lib/web-fetch";
 
 export const runtime = "nodejs";
 
@@ -15,21 +22,6 @@ type PreviewResult = {
   screenshotBytes?: number;
   screenshotError?: string;
 };
-
-function decodeHtmlEntities(s: string) {
-  // Minimal decoding for common entities found in <title>/<meta>.
-  return (
-    s
-      .replaceAll("&amp;", "&")
-      .replaceAll("&quot;", '"')
-      .replaceAll("&#39;", "'")
-      .replaceAll("&lt;", "<")
-      .replaceAll("&gt;", ">")
-      // collapse whitespace
-      .replaceAll(/\s+/g, " ")
-      .trim()
-  );
-}
 
 async function fetchBrowserlessScreenshotDataUrl(url: string) {
   const token = process.env.BROWSERLESS_API_KEY;
@@ -65,59 +57,6 @@ async function fetchBrowserlessScreenshotDataUrl(url: string) {
     contentType,
     bytes: imageBuffer.byteLength,
   };
-}
-
-function extractMetaContent(html: string, key: {name?: string; property?: string}) {
-  const keyName = key.name?.toLowerCase();
-  const keyProp = key.property?.toLowerCase();
-
-  // Very small/naive HTML parsing via regex (good enough for "simple").
-  const metaTags = html.match(/<meta\b[^>]*>/gi) ?? [];
-  for (const tag of metaTags) {
-    const nameMatch = /\bname\s*=\s*(".*?"|'.*?'|[^\s>]+)/i.exec(tag);
-    const propMatch = /\bproperty\s*=\s*(".*?"|'.*?'|[^\s>]+)/i.exec(tag);
-    const contentMatch = /\bcontent\s*=\s*(".*?"|'.*?'|[^\s>]+)/i.exec(tag);
-
-    if (!contentMatch) continue;
-    const content = stripWrappingQuotes(contentMatch[1] ?? "");
-
-    if (keyName && nameMatch) {
-      const name = stripWrappingQuotes(nameMatch[1] ?? "").toLowerCase();
-      if (name === keyName) return decodeHtmlEntities(content);
-    }
-    if (keyProp && propMatch) {
-      const prop = stripWrappingQuotes(propMatch[1] ?? "").toLowerCase();
-      if (prop === keyProp) return decodeHtmlEntities(content);
-    }
-  }
-
-  return undefined;
-}
-
-function extractTitle(html: string) {
-  // Prefer OG title when present, then fallback to <title>.
-  const ogTitle = extractMetaContent(html, {property: "og:title"});
-  if (ogTitle) return ogTitle;
-
-  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
-  if (!m) return undefined;
-  return decodeHtmlEntities(m[1] ?? "");
-}
-
-function extractDescription(html: string) {
-  // Prefer OG description, then standard meta description.
-  const og = extractMetaContent(html, {property: "og:description"});
-  if (og) return og;
-  return extractMetaContent(html, {name: "description"});
-}
-
-function extractOgImageUrl(html: string) {
-  // Keep it simple: OG image first. (You can add twitter:image and fallbacks later.)
-  return (
-    extractMetaContent(html, {property: "og:image:secure_url"}) ??
-    extractMetaContent(html, {property: "og:image:url"}) ??
-    extractMetaContent(html, {property: "og:image"})
-  );
 }
 
 export async function GET(request: NextRequest) {
@@ -161,7 +100,7 @@ export async function GET(request: NextRequest) {
     }
 
     const contentType = res.headers.get("content-type") ?? "";
-    const isHtml = contentType.includes("text/html") || contentType.includes("application/xhtml");
+    const isHtml = isHtmlContentType(contentType);
     if (!isHtml) {
       return NextResponse.json(
         {...result, title: undefined, description: undefined},
@@ -170,9 +109,9 @@ export async function GET(request: NextRequest) {
     }
 
     const html = await res.text();
-    result.title = extractTitle(html);
-    result.description = extractDescription(html);
-    const ogImage = extractOgImageUrl(html);
+    result.title = extractTitleFromHtml(html);
+    result.description = extractDescriptionFromHtml(html);
+    const ogImage = extractOgImageUrlFromHtml(html);
     if (ogImage) {
       try {
         // Resolve relative URLs against the final fetched URL.
