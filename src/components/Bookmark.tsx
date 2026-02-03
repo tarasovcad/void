@@ -5,6 +5,11 @@ import Link from "next/link";
 import {formatDateAbsolute} from "@/lib/formatDate";
 import {useEffect, useState} from "react";
 import {cn} from "@/lib/utils";
+import {Sheet, SheetContent, SheetHeader, SheetPanel, SheetTitle} from "@/components/coss-ui/sheet";
+import {Button} from "@/components/coss-ui/button";
+import {Separator} from "@/components/shadcn/separator";
+import {Textarea} from "@/components/shadcn/textarea";
+import {ImageIcon, InboxIcon, StarIcon, Trash2Icon} from "lucide-react";
 
 export type Bookmark = {
   id: string;
@@ -101,8 +106,38 @@ function BookmarkHoverActions({
   );
 }
 
-const PlaceholderThumb = ({bookmark_id}: {bookmark_id: string}) => {
-  const BASE_SRC = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/bookmark-favicons/${bookmark_id}/favicon.png`;
+const BookmarkImage = ({
+  bookmark_id,
+  type,
+  divClassName,
+  imageClassName,
+  height,
+  width,
+  fallbackClassName,
+  fill,
+}: {
+  bookmark_id: string;
+  type: "preview" | "favicon" | "og";
+  divClassName?: string;
+  imageClassName?: string;
+  height?: number;
+  width?: number;
+  fallbackClassName?: string;
+  fill?: boolean;
+}) => {
+  let BASE_SRC = "";
+
+  switch (type) {
+    case "preview":
+      BASE_SRC = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/bookmark-previews/${bookmark_id}/preview.png`;
+      break;
+    case "favicon":
+      BASE_SRC = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/bookmark-favicons/${bookmark_id}/favicon.png`;
+      break;
+    case "og":
+      BASE_SRC = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/bookmark-previews/${bookmark_id}/og.png`;
+      break;
+  }
   const MAX_RETRIES = 12; // ~24s at 2s interval
   const RETRY_MS = 2000;
 
@@ -123,9 +158,9 @@ const PlaceholderThumb = ({bookmark_id}: {bookmark_id: string}) => {
   }, [attempt, status]);
 
   return (
-    <div className="absolute inset-0 grid grid-cols-1 grid-rows-1 place-items-center">
+    <div className={cn(divClassName)}>
       {status !== "loaded" ? (
-        <div className="text-muted-foreground col-start-1 row-start-1">
+        <div className={fallbackClassName}>
           <svg
             width="20"
             height="20"
@@ -152,13 +187,11 @@ const PlaceholderThumb = ({bookmark_id}: {bookmark_id: string}) => {
       {/* Cache-busted favicon attempts. Keep hidden until loaded to avoid alt text flashes. */}
       <Image
         src={`${BASE_SRC}?v=${attempt}`}
-        alt=""
-        width={24}
-        height={24}
-        className={[
-          "col-start-1 row-start-1 h-full max-h-6 w-full max-w-6 object-cover",
-          status === "loaded" ? "opacity-100" : "opacity-0",
-        ].join(" ")}
+        alt={`${bookmark_id} ${type}`}
+        width={fill ? undefined : width}
+        height={fill ? undefined : height}
+        fill={fill}
+        className={cn(status === "loaded" ? "opacity-100" : "opacity-0", imageClassName)}
         unoptimized
         onLoad={() => setStatus("loaded")}
         onError={() => setStatus("error")}
@@ -167,21 +200,45 @@ const PlaceholderThumb = ({bookmark_id}: {bookmark_id: string}) => {
   );
 };
 
-export const ItemRow = ({item}: {item: Bookmark}) => {
+export const ItemRow = ({
+  item,
+  onOpenMenu,
+}: {
+  item: Bookmark;
+  onOpenMenu?: (item: Bookmark) => void;
+}) => {
   // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
   // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
 
   return (
     <Link
       href={`/all/${item.id}`}
+      onClick={(e) => {
+        if (!onOpenMenu) return;
+        e.preventDefault();
+        onOpenMenu(item);
+      }}
       className={[
         "group relative flex w-full cursor-pointer gap-5 border-b px-6 py-5 pr-16 text-left",
         "hover:bg-muted/40 focus-visible:bg-muted/40",
         "focus-visible:ring-ring/50 outline-none focus-visible:ring-2",
       ].join(" ")}>
-      <BookmarkHoverActions className="top-4 right-4" />
+      <BookmarkHoverActions
+        className="top-4 right-4"
+        onOptions={() => {
+          onOpenMenu?.(item);
+        }}
+      />
       <div className="relative size-9 shrink-0 overflow-hidden rounded-md border">
-        <PlaceholderThumb bookmark_id={item.id} />
+        <BookmarkImage
+          bookmark_id={item.id}
+          type="favicon"
+          divClassName="absolute inset-0 grid grid-cols-1 grid-rows-1 place-items-center"
+          imageClassName="col-start-1 row-start-1 h-full max-h-6 w-full max-w-6 object-cover"
+          fallbackClassName="text-muted-foreground col-start-1 row-start-1"
+          height={24}
+          width={24}
+        />
       </div>
 
       <div className="min-w-0 flex-1">
@@ -204,25 +261,40 @@ export const ItemRow = ({item}: {item: Bookmark}) => {
   );
 };
 
-export const GridCard = ({item}: {item: Bookmark}) => {
+export const GridCard = ({
+  item,
+  onOpenMenu,
+}: {
+  item: Bookmark;
+  onOpenMenu?: (item: Bookmark) => void;
+}) => {
   // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
 
   return (
     <Link
       href={item.url}
+      onClick={(e) => {
+        if (!onOpenMenu) return;
+        e.preventDefault();
+        onOpenMenu(item);
+      }}
       className={[
         "group bg-background relative w-full overflow-hidden rounded-md border text-left",
         "hover:bg-muted/30 focus-visible:bg-muted/30",
         "focus-visible:ring-ring/50 hover:border-foreground/30 outline-none focus-visible:ring-2",
       ].join(" ")}>
       <div className="bg-muted relative aspect-16/10 w-full">
-        <BookmarkHoverActions />
+        <BookmarkHoverActions
+          onOptions={() => {
+            onOpenMenu?.(item);
+          }}
+        />
 
-        <Image
-          src={`https://jvnaqdowfvgjeiiynebq.supabase.co/storage/v1/object/public/bookmark-previews/${item.id}/preview.png`}
-          alt={item.title}
-          fill
-          className="rounded-md object-cover p-2"
+        <BookmarkImage
+          bookmark_id={item.id}
+          type="preview"
+          fill={true}
+          imageClassName="rounded-md object-cover p-2"
         />
       </div>
 
@@ -242,3 +314,165 @@ export const GridCard = ({item}: {item: Bookmark}) => {
     </Link>
   );
 };
+
+export function BookmarkMenu({
+  item,
+  onOpenChange,
+  open,
+}: {
+  item?: Bookmark;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+}) {
+  const data = React.useMemo(() => {
+    return {
+      title: item?.title,
+      description: item?.description,
+      source: item?.url,
+      type: item?.kind ? item.kind.charAt(0).toUpperCase() + item.kind.slice(1) : undefined,
+      saved: formatDateAbsolute(item?.created_at ?? ""),
+      tags: ["animation", "design", "videos"],
+    };
+  }, [item]);
+
+  const [sourceCopied, setSourceCopied] = React.useState(false);
+  const sourceCopyTimeoutRef = React.useRef<number | null>(null);
+
+  const handleCopySource = async () => {
+    if (!data.source) return;
+
+    try {
+      await navigator.clipboard.writeText(data.source);
+      setSourceCopied(true);
+    } finally {
+      if (sourceCopyTimeoutRef.current) window.clearTimeout(sourceCopyTimeoutRef.current);
+      sourceCopyTimeoutRef.current = window.setTimeout(() => setSourceCopied(false), 2000);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (sourceCopyTimeoutRef.current) window.clearTimeout(sourceCopyTimeoutRef.current);
+    };
+  }, []);
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="max-w-[560px]">
+        <SheetPanel className="p-0">
+          {item?.id ? (
+            <div className="bg-muted relative aspect-video w-full border-b">
+              <Image
+                src={`https://jvnaqdowfvgjeiiynebq.supabase.co/storage/v1/object/public/bookmark-previews/${item.id}/preview.png`}
+                alt={data.title ?? "Bookmark preview"}
+                fill
+                className="object-cover"
+              />
+            </div>
+          ) : (
+            <div className="bg-muted aspect-video w-full border-b" />
+          )}
+
+          <div className="p-6">
+            <SheetHeader className="p-0">
+              <SheetTitle className="text-foreground/95 text-lg font-semibold">
+                {data.title}
+              </SheetTitle>
+            </SheetHeader>
+
+            <div className="mt-2 flex gap-2">
+              <Button variant="outline" className="" type="button">
+                <StarIcon className="size-4" />
+                Favorite
+              </Button>
+              <Button variant="outline" className="" type="button">
+                <InboxIcon className="size-4" />
+                Archive
+              </Button>
+              <Button variant="outline" className="" type="button">
+                <ImageIcon className="size-4" />
+                Preview
+              </Button>
+              <Button variant="outline" className="" type="button">
+                <Trash2Icon className="size-4" />
+                Delete
+              </Button>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="p-6">
+            <div className="text-muted-foreground text-sm">{data.description}</div>
+          </div>
+
+          <Separator />
+
+          <div className="p-6">
+            <div className="text-sm font-semibold">Details</div>
+
+            <div className="mt-4 grid grid-cols-[120px_1fr] gap-y-3 text-sm">
+              <div className="text-muted-foreground">Source</div>
+              <button
+                type="button"
+                onClick={handleCopySource}
+                className={cn(
+                  "inline-flex min-w-0 items-center gap-2 text-left",
+                  "hover:text-foreground focus-visible:ring-ring/50 rounded-sm outline-none focus-visible:ring-2",
+                )}>
+                <span className="min-w-0 truncate underline-offset-4 hover:underline">
+                  {data.source}
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "text-muted-foreground inline-flex shrink-0 items-center transition-opacity duration-200",
+                    sourceCopied ? "opacity-100" : "opacity-0",
+                  )}>
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <path
+                      d="M13.3332 4L6.33317 11L2.6665 7.33333"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+              </button>
+
+              <div className="text-muted-foreground">Type</div>
+              <div>{data.type}</div>
+
+              <div className="text-muted-foreground">Saved</div>
+              <div>{data.saved}</div>
+
+              <div className="text-muted-foreground">Tags</div>
+              <div className="flex flex-wrap gap-x-2 gap-y-1">
+                {data.tags.map((t) => (
+                  <span key={t} className="text-foreground/90">
+                    #{t}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="p-6">
+            <div className="text-sm font-semibold">Notes</div>
+            <div className="mt-3">
+              <Textarea placeholder="Click to add personal notes..." />
+            </div>
+          </div>
+        </SheetPanel>
+      </SheetContent>
+    </Sheet>
+  );
+}

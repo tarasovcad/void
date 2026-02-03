@@ -5,7 +5,7 @@ import {Select, SelectItem, SelectPopup, SelectTrigger} from "@/components/coss-
 import {cn} from "@/lib/utils";
 import {ScrollArea} from "@/components/coss-ui/scroll-area";
 import {useState} from "react";
-import {Bookmark, GridCard, ItemRow} from "@/components/Bookmark";
+import {Bookmark, BookmarkMenu, GridCard, ItemRow} from "@/components/Bookmark";
 
 type ViewMode = "grid" | "list";
 type TypeFilter = "all" | Bookmark["kind"];
@@ -165,6 +165,13 @@ export default function AllItemsClient({items}: {items: Bookmark[]}) {
   const [view, setView] = useState<ViewMode>("list");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [sort, setSort] = useState<SortMode>("recent");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuItem, setMenuItem] = useState<Bookmark | undefined>(undefined);
+
+  const openMenu = React.useCallback((item: Bookmark) => {
+    setMenuItem(item);
+    setMenuOpen(true);
+  }, []);
 
   const filteredAndSortedItems = React.useMemo(() => {
     const filtered = typeFilter === "all" ? items : items.filter((i) => i.kind === typeFilter);
@@ -205,7 +212,7 @@ export default function AllItemsClient({items}: {items: Bookmark[]}) {
           <ViewToggle value={view} onChange={setView} />
         </div>
       </div>
-
+      <BookmarkMenu item={menuItem} open={menuOpen} onOpenChange={setMenuOpen} />
       <div className="text-muted-foreground px-6 py-3 text-xs">
         {filteredAndSortedItems.length} items
       </div>
@@ -213,13 +220,13 @@ export default function AllItemsClient({items}: {items: Bookmark[]}) {
         {view === "grid" ? (
           <div className="grid grid-cols-1 gap-6 px-6 pb-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredAndSortedItems.map((item) => (
-              <GridCard key={item.id} item={item} />
+              <GridCard key={item.id} item={item} onOpenMenu={openMenu} />
             ))}
           </div>
         ) : (
           <div className="border-t">
             {filteredAndSortedItems.map((item) => (
-              <ItemRow key={item.id} item={item} />
+              <ItemRow key={item.id} item={item} onOpenMenu={openMenu} />
             ))}
           </div>
         )}
