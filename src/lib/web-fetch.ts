@@ -54,21 +54,23 @@ export function extractMetaContentFromHtml(html: string, key: {name?: string; pr
   return undefined;
 }
 
-export function extractTitleFromHtml(html: string) {
+export function extractTitleFromHtml(html: string): string {
   // Prefer OG title when present, then fallback to <title>.
   const ogTitle = extractMetaContentFromHtml(html, {property: "og:title"});
-  if (ogTitle) return ogTitle;
+  if (ogTitle && ogTitle.trim()) return ogTitle.trim();
 
   const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
-  if (!m) return undefined;
-  return decodeHtmlEntitiesMinimal(m[1] ?? "");
+  const title = m ? decodeHtmlEntitiesMinimal(m[1] ?? "") : "";
+  const cleaned = title.trim();
+  return cleaned ? cleaned : "Undefined";
 }
 
-export function extractDescriptionFromHtml(html: string) {
+export function extractDescriptionFromHtml(html: string): string {
   // Prefer OG description, then standard meta description.
   const og = extractMetaContentFromHtml(html, {property: "og:description"});
-  if (og) return og;
-  return extractMetaContentFromHtml(html, {name: "description"});
+  const description = og ?? extractMetaContentFromHtml(html, {name: "description"}) ?? "";
+  const cleaned = description.trim();
+  return cleaned ? cleaned : "Undefined";
 }
 
 export function extractOgImageUrlFromHtml(html: string) {
@@ -506,7 +508,15 @@ export async function fetchBrowserlessScreenshotDataUrl(url: string) {
       {
         method: "POST",
         headers: {"Cache-Control": "no-cache", "Content-Type": "application/json"},
-        body: JSON.stringify({url}),
+        body: JSON.stringify({
+          url,
+          viewport: {width: 1920, height: 1080, deviceScaleFactor: 1},
+          options: {
+            type: "png",
+            fullPage: false,
+            clip: {x: 0, y: 0, width: 1920, height: 900},
+          },
+        }),
         signal: controller.signal,
       },
     );

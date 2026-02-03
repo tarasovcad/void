@@ -82,7 +82,9 @@ export async function addBookmark(input: {url: string}): Promise<AddBookmarkResu
     .insert({
       url: normalized.toString(),
       title: metadata.title ?? null,
+      user_id: session.user.id,
       description: metadata.description ?? null,
+      kind: "website",
     })
     .select("id")
     .single();

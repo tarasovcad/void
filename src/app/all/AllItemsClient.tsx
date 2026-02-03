@@ -4,21 +4,11 @@ import * as React from "react";
 import {Select, SelectItem, SelectPopup, SelectTrigger} from "@/components/coss-ui/select";
 import {cn} from "@/lib/utils";
 import {ScrollArea} from "@/components/coss-ui/scroll-area";
-import Link from "next/link";
-
-export type AllItem = {
-  id: string;
-  kind: "website" | "article" | "video" | "image" | "social" | "other";
-  title: string;
-  domain: string;
-  dateLabel: string;
-  tags: string[];
-  description?: string;
-};
+import {useState} from "react";
+import {Bookmark, GridCard, ItemRow} from "@/components/Bookmark";
 
 type ViewMode = "grid" | "list";
-
-type TypeFilter = "all" | AllItem["kind"];
+type TypeFilter = "all" | Bookmark["kind"];
 type SortMode = "recent" | "oldest" | "az";
 
 function getTypeLabel(value: TypeFilter) {
@@ -27,16 +17,8 @@ function getTypeLabel(value: TypeFilter) {
       return "All Types";
     case "website":
       return "Websites";
-    case "article":
-      return "Articles";
-    case "video":
-      return "Videos";
     case "image":
       return "Images";
-    case "social":
-      return "Social";
-    case "other":
-      return "Other";
   }
 }
 
@@ -157,11 +139,7 @@ function TypeSelect({value, onChange}: {value: TypeFilter; onChange: (v: TypeFil
       <SelectPopup>
         <SelectItem value="all">All Types</SelectItem>
         <SelectItem value="website">Websites</SelectItem>
-        <SelectItem value="article">Articles</SelectItem>
-        <SelectItem value="video">Videos</SelectItem>
         <SelectItem value="image">Images</SelectItem>
-        <SelectItem value="social">Social</SelectItem>
-        <SelectItem value="other">Other</SelectItem>
       </SelectPopup>
     </Select>
   );
@@ -183,113 +161,37 @@ function SortSelect({value, onChange}: {value: SortMode; onChange: (v: SortMode)
   );
 }
 
-function KindPill({kind}: {kind: AllItem["kind"]}) {
-  return (
-    <span className="bg-background text-foreground inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium shadow-xs">
-      {kind}
-    </span>
-  );
-}
-
-function PlaceholderThumb() {
-  return (
-    <div className="text-muted-foreground absolute inset-0 grid place-items-center">
-      <svg
-        width="20"
-        height="20"
-        viewBox="0 0 20 20"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg">
-        <path d="M4.75 4.75H15.25V15.25H4.75V4.75Z" stroke="currentColor" strokeWidth="1" />
-        <path
-          d="M6.5 12.5L8.25 10.75L10.25 12.75L12 11L13.5 12.5"
-          stroke="currentColor"
-          strokeWidth="1"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M8 8.25C8 8.66421 7.66421 9 7.25 9C6.83579 9 6.5 8.66421 6.5 8.25C6.5 7.83579 6.83579 7.5 7.25 7.5C7.66421 7.5 8 7.83579 8 8.25Z"
-          fill="currentColor"
-        />
-      </svg>
-    </div>
-  );
-}
-
-function ItemRow({item}: {item: AllItem}) {
-  const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
-
-  return (
-    <Link
-      href={`/all/${item.id}`}
-      className={[
-        "group flex w-full cursor-pointer gap-5 border-b px-6 py-5 text-left",
-        "hover:bg-muted/40 focus-visible:bg-muted/40",
-        "focus-visible:ring-ring/50 outline-none focus-visible:ring-2",
-      ].join(" ")}>
-      <div className="bg-muted relative size-12 shrink-0 overflow-hidden rounded-md border">
-        <PlaceholderThumb />
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="text-foreground truncate text-sm font-semibold">{item.title}</div>
-        <div className="text-muted-foreground mt-0.5 text-xs">{meta}</div>
-        {item.tags.length > 0 ? (
-          <div className="text-muted-foreground mt-2 text-xs">
-            {item.tags.map((t) => `#${t}`).join("  ")}
-          </div>
-        ) : null}
-        {item.description ? (
-          <div className="text-muted-foreground mt-2 line-clamp-2 text-xs">{item.description}</div>
-        ) : null}
-      </div>
-    </Link>
-  );
-}
-
-function GridCard({item}: {item: AllItem}) {
-  const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
-
-  return (
-    <button
-      type="button"
-      className={[
-        "bg-background w-full overflow-hidden rounded-md border text-left",
-        "hover:bg-muted/30 focus-visible:bg-muted/30",
-        "focus-visible:ring-ring/50 outline-none focus-visible:ring-2",
-      ].join(" ")}>
-      <div className="bg-muted relative aspect-16/10 w-full">
-        <PlaceholderThumb />
-        <div className="absolute bottom-3 left-3">
-          <KindPill kind={item.kind} />
-        </div>
-      </div>
-
-      <div className="p-4">
-        <div className="text-foreground line-clamp-2 text-sm font-semibold">{item.title}</div>
-        <div className="text-muted-foreground mt-1 text-xs">{meta}</div>
-        {item.tags.length > 0 ? (
-          <div className="text-muted-foreground mt-3 text-xs">
-            {item.tags.map((t) => `#${t}`).join("  ")}
-          </div>
-        ) : null}
-      </div>
-    </button>
-  );
-}
-
-export default function AllItemsClient({items}: {items: AllItem[]}) {
-  const [view, setView] = React.useState<ViewMode>("grid");
-  const [typeFilter, setTypeFilter] = React.useState<TypeFilter>("all");
-  const [sort, setSort] = React.useState<SortMode>("recent");
+export default function AllItemsClient({items}: {items: Bookmark[]}) {
+  const [view, setView] = useState<ViewMode>("list");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [sort, setSort] = useState<SortMode>("recent");
 
   const filteredAndSortedItems = React.useMemo(() => {
     const filtered = typeFilter === "all" ? items : items.filter((i) => i.kind === typeFilter);
 
-    if (sort === "oldest") return [...filtered].reverse();
-    if (sort === "az") return [...filtered].sort((a, b) => a.title.localeCompare(b.title));
-    return filtered; // recent (as provided)
+    const toTime = (iso: string) => {
+      const t = Date.parse(iso);
+      return Number.isFinite(t) ? t : 0;
+    };
+
+    const toText = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
+
+    if (sort === "az") {
+      return [...filtered].sort((a, b) => {
+        const at = toText((a as {title?: unknown}).title).trim();
+        const bt = toText((b as {title?: unknown}).title).trim();
+        return at.localeCompare(bt, undefined, {sensitivity: "base"}) || a.id.localeCompare(b.id);
+      });
+    }
+    if (sort === "oldest") {
+      return [...filtered].sort(
+        (a, b) => toTime(a.created_at) - toTime(b.created_at) || a.id.localeCompare(b.id),
+      );
+    }
+    // recent
+    return [...filtered].sort(
+      (a, b) => toTime(b.created_at) - toTime(a.created_at) || a.id.localeCompare(b.id),
+    );
   }, [items, sort, typeFilter]);
 
   return (
