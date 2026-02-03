@@ -3,13 +3,19 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {formatDateAbsolute} from "@/lib/formatDate";
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {cn} from "@/lib/utils";
 import {Sheet, SheetContent, SheetHeader, SheetPanel, SheetTitle} from "@/components/coss-ui/sheet";
 import {Button} from "@/components/coss-ui/button";
+import {Button as ShadcnButton} from "@/components/shadcn/button";
 import {Separator} from "@/components/shadcn/separator";
 import {Textarea} from "@/components/shadcn/textarea";
 import {ImageIcon, InboxIcon, StarIcon, Trash2Icon} from "lucide-react";
+import {useForm} from "react-hook-form";
+import {zodResolver} from "@hookform/resolvers/zod";
+import {z} from "zod";
+import {updateBookmark, UpdateBookmarkData} from "@/app/actions/bookmarks";
+import {toastManager} from "@/components/coss-ui/toast";
 
 export type Bookmark = {
   id: string;
@@ -19,6 +25,7 @@ export type Bookmark = {
   created_at: string;
   url: string;
   user_id: string;
+  preview_image: string;
   // tags: string[];
 };
 
@@ -108,6 +115,7 @@ function BookmarkHoverActions({
 
 const BookmarkImage = ({
   bookmark_id,
+  item,
   type,
   divClassName,
   imageClassName,
@@ -117,6 +125,7 @@ const BookmarkImage = ({
   fill,
 }: {
   bookmark_id: string;
+  item: Bookmark;
   type: "preview" | "favicon" | "og";
   divClassName?: string;
   imageClassName?: string;
@@ -129,13 +138,10 @@ const BookmarkImage = ({
 
   switch (type) {
     case "preview":
-      BASE_SRC = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/bookmark-previews/${bookmark_id}/preview.png`;
+      BASE_SRC = item.preview_image ?? "";
       break;
     case "favicon":
       BASE_SRC = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/bookmark-favicons/${bookmark_id}/favicon.png`;
-      break;
-    case "og":
-      BASE_SRC = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/bookmark-previews/${bookmark_id}/og.png`;
       break;
   }
   const MAX_RETRIES = 12; // ~24s at 2s interval
@@ -232,6 +238,7 @@ export const ItemRow = ({
       <div className="relative size-9 shrink-0 overflow-hidden rounded-md border">
         <BookmarkImage
           bookmark_id={item.id}
+          item={item}
           type="favicon"
           divClassName="absolute inset-0 grid grid-cols-1 grid-rows-1 place-items-center"
           imageClassName="col-start-1 row-start-1 h-full max-h-6 w-full max-w-6 object-cover"
@@ -292,6 +299,7 @@ export const GridCard = ({
 
         <BookmarkImage
           bookmark_id={item.id}
+          item={item}
           type="preview"
           fill={true}
           imageClassName="rounded-md object-cover p-2"
@@ -315,6 +323,15 @@ export const GridCard = ({
   );
 };
 
+// Zod schema for bookmark form validation
+const bookmarkFormSchema = z.object({
+  title: z.string().min(1, "Title is required").max(200, "Title must be less than 200 characters"),
+  description: z.string().max(1000, "Description must be less than 1000 characters").optional(),
+  preview_image: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+});
+
+type BookmarkFormValues = z.infer<typeof bookmarkFormSchema>;
+
 export function BookmarkMenu({
   item,
   onOpenChange,
@@ -331,12 +348,98 @@ export function BookmarkMenu({
       source: item?.url,
       type: item?.kind ? item.kind.charAt(0).toUpperCase() + item.kind.slice(1) : undefined,
       saved: formatDateAbsolute(item?.created_at ?? ""),
+      preview_image: item?.preview_image,
       tags: ["animation", "design", "videos"],
     };
   }, [item]);
 
-  const [sourceCopied, setSourceCopied] = React.useState(false);
-  const sourceCopyTimeoutRef = React.useRef<number | null>(null);
+  // Initialize React Hook Form with Zod validation
+  const form = useForm<BookmarkFormValues>({
+    resolver: zodResolver(bookmarkFormSchema),
+    defaultValues: {
+      title: item?.title ?? "",
+      description: item?.description ?? "",
+      preview_image: item?.preview_image ?? "",
+    },
+  });
+
+  console.log(form.getValues());
+
+  const originalValues = useRef<BookmarkFormValues>({
+    title: "",
+    description: "",
+    preview_image: "",
+  });
+
+  const titleElRef = useRef<HTMLHeadingElement | null>(null);
+  const descriptionElRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (item) {
+      const values = {
+        title: item.title,
+        description: item.description,
+        preview_image: item.preview_image,
+      };
+      form.reset(values);
+      originalValues.current = values;
+    }
+  }, [item, form]);
+
+  const currentValues = form.watch();
+
+  const hasChanges = React.useMemo(() => {
+    if (!item) return false;
+    return (
+      (currentValues.title ?? "") !== (originalValues.current.title ?? "") ||
+      (currentValues.description ?? "") !== (originalValues.current.description ?? "") ||
+      (currentValues.preview_image ?? "") !== (originalValues.current.preview_image ?? "")
+    );
+  }, [currentValues, item]);
+
+  const onSubmit = async (values: BookmarkFormValues) => {
+    if (!item) return;
+
+    try {
+      // Only include fields that have actually changed
+      const updates: UpdateBookmarkData = {};
+
+      if ((values.title ?? "") !== (originalValues.current.title ?? "")) {
+        updates.title = values.title;
+      }
+
+      if ((values.description ?? "") !== (originalValues.current.description ?? "")) {
+        updates.description = values.description;
+      }
+
+      if ((values.preview_image ?? "") !== (originalValues.current.preview_image ?? "")) {
+        updates.preview_image = values.preview_image;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await updateBookmark(item.id, updates);
+
+        toastManager.add({
+          title: "Bookmark updated",
+          type: "success",
+        });
+      }
+
+      originalValues.current = values;
+      form.reset(values);
+    } catch (error) {
+      console.error("Failed to update bookmark:", error);
+
+      toastManager.add({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : "Failed to update bookmark",
+        type: "error",
+      });
+    }
+  };
+
+  const [sourceCopied, setSourceCopied] = useState(false);
+  const sourceCopyTimeoutRef = useRef<number | null>(null);
 
   const handleCopySource = async () => {
     if (!data.source) return;
@@ -360,117 +463,157 @@ export function BookmarkMenu({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="max-w-[560px]">
         <SheetPanel className="p-0">
-          {item?.id ? (
-            <div className="bg-muted relative aspect-video w-full border-b">
-              <Image
-                src={`https://jvnaqdowfvgjeiiynebq.supabase.co/storage/v1/object/public/bookmark-previews/${item.id}/preview.png`}
-                alt={data.title ?? "Bookmark preview"}
-                fill
-                className="object-cover"
-              />
-            </div>
-          ) : (
-            <div className="bg-muted aspect-video w-full border-b" />
-          )}
+          <form onSubmit={form.handleSubmit(onSubmit)}>
+            {item?.id ? (
+              <div className="bg-muted relative aspect-video w-full border-b">
+                <Image
+                  src={data.preview_image ?? ""}
+                  alt={data.title ?? "Bookmark preview"}
+                  fill
+                  className="object-cover"
+                />
+              </div>
+            ) : (
+              <div className="bg-muted aspect-video w-full border-b" />
+            )}
 
-          <div className="p-6">
-            <SheetHeader className="p-0">
-              <SheetTitle className="text-foreground/95 text-lg font-semibold">
-                {data.title}
-              </SheetTitle>
-            </SheetHeader>
+            <div className="p-6">
+              <SheetHeader className="p-0">
+                <SheetTitle
+                  key={`title-${item?.id}`}
+                  ref={titleElRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={(e) => {
+                    const newTitle = e.currentTarget.textContent ?? "";
+                    form.setValue("title", newTitle, {shouldDirty: true});
+                  }}
+                  onBlur={(e) => {
+                    const newTitle = e.currentTarget.textContent ?? "";
+                    form.setValue("title", newTitle, {shouldDirty: true});
+                  }}
+                  className="text-foreground/95 text-lg font-semibold focus:ring-0 focus:ring-offset-0 focus:outline-none">
+                  {item?.title}
+                </SheetTitle>
+              </SheetHeader>
 
-            <div className="mt-2 flex gap-2">
-              <Button variant="outline" className="" type="button">
-                <StarIcon className="size-4" />
-                Favorite
-              </Button>
-              <Button variant="outline" className="" type="button">
-                <InboxIcon className="size-4" />
-                Archive
-              </Button>
-              <Button variant="outline" className="" type="button">
-                <ImageIcon className="size-4" />
-                Preview
-              </Button>
-              <Button variant="outline" className="" type="button">
-                <Trash2Icon className="size-4" />
-                Delete
-              </Button>
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="p-6">
-            <div className="text-muted-foreground text-sm">{data.description}</div>
-          </div>
-
-          <Separator />
-
-          <div className="p-6">
-            <div className="text-sm font-semibold">Details</div>
-
-            <div className="mt-4 grid grid-cols-[120px_1fr] gap-y-3 text-sm">
-              <div className="text-muted-foreground">Source</div>
-              <button
-                type="button"
-                onClick={handleCopySource}
-                className={cn(
-                  "inline-flex min-w-0 items-center gap-2 text-left",
-                  "hover:text-foreground focus-visible:ring-ring/50 rounded-sm outline-none focus-visible:ring-2",
-                )}>
-                <span className="min-w-0 truncate underline-offset-4 hover:underline">
-                  {data.source}
-                </span>
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "text-muted-foreground inline-flex shrink-0 items-center transition-opacity duration-200",
-                    sourceCopied ? "opacity-100" : "opacity-0",
-                  )}>
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg">
-                    <path
-                      d="M13.3332 4L6.33317 11L2.6665 7.33333"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-              </button>
-
-              <div className="text-muted-foreground">Type</div>
-              <div>{data.type}</div>
-
-              <div className="text-muted-foreground">Saved</div>
-              <div>{data.saved}</div>
-
-              <div className="text-muted-foreground">Tags</div>
-              <div className="flex flex-wrap gap-x-2 gap-y-1">
-                {data.tags.map((t) => (
-                  <span key={t} className="text-foreground/90">
-                    #{t}
-                  </span>
-                ))}
+              <div className="mt-2 flex gap-2">
+                <Button variant="outline" className="" type="button">
+                  <StarIcon className="size-4" />
+                  Favorite
+                </Button>
+                <Button variant="outline" className="" type="button">
+                  <InboxIcon className="size-4" />
+                  Archive
+                </Button>
+                <Button variant="outline" className="" type="button">
+                  <ImageIcon className="size-4" />
+                  Preview
+                </Button>
+                <Button variant="outline" className="" type="button">
+                  <Trash2Icon className="size-4" />
+                  Delete
+                </Button>
               </div>
             </div>
-          </div>
 
-          <Separator />
+            <Separator />
 
-          <div className="p-6">
-            <div className="text-sm font-semibold">Notes</div>
-            <div className="mt-3">
-              <Textarea placeholder="Click to add personal notes..." />
+            <div className="p-6">
+              <div
+                key={`description-${item?.id}`}
+                ref={descriptionElRef}
+                contentEditable
+                suppressContentEditableWarning
+                onInput={(e) => {
+                  const newDescription = e.currentTarget.textContent ?? "";
+                  form.setValue("description", newDescription, {shouldDirty: true});
+                }}
+                onBlur={(e) => {
+                  const newDescription = e.currentTarget.textContent ?? "";
+                  form.setValue("description", newDescription, {shouldDirty: true});
+                }}
+                className="text-muted-foreground text-sm focus:ring-0 focus:ring-offset-0 focus:outline-none">
+                {item?.description}
+              </div>
             </div>
-          </div>
+
+            <Separator />
+
+            <div className="p-6">
+              <div className="text-sm font-semibold">Details</div>
+
+              <div className="mt-4 grid grid-cols-[120px_1fr] gap-y-3 text-sm">
+                <div className="text-muted-foreground">Source</div>
+                <button
+                  type="button"
+                  onClick={handleCopySource}
+                  className={cn(
+                    "inline-flex min-w-0 items-center gap-2 text-left",
+                    "hover:text-foreground focus-visible:ring-ring/50 rounded-sm outline-none focus-visible:ring-2",
+                  )}>
+                  <span className="min-w-0 truncate underline-offset-4 hover:underline">
+                    {data.source}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "text-muted-foreground inline-flex shrink-0 items-center transition-opacity duration-200",
+                      sourceCopied ? "opacity-100" : "opacity-0",
+                    )}>
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg">
+                      <path
+                        d="M13.3332 4L6.33317 11L2.6665 7.33333"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </button>
+
+                <div className="text-muted-foreground">Type</div>
+                <div>{data.type}</div>
+
+                <div className="text-muted-foreground">Saved</div>
+                <div>{data.saved}</div>
+
+                <div className="text-muted-foreground">Tags</div>
+                <div className="flex flex-wrap gap-x-2 gap-y-1">
+                  {data.tags.map((t) => (
+                    <span key={t} className="text-foreground/90">
+                      #{t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="p-6">
+              <div className="text-sm font-semibold">Notes</div>
+              <div className="mt-3">
+                <Textarea placeholder="Click to add personal notes..." />
+              </div>
+            </div>
+            <ShadcnButton
+              variant="default"
+              disabled={!hasChanges}
+              className={cn(
+                "absolute right-6 bottom-6 transition-opacity duration-150",
+                hasChanges ? "opacity-100!" : "opacity-0!",
+              )}
+              type="submit">
+              Submit
+            </ShadcnButton>
+          </form>
         </SheetPanel>
       </SheetContent>
     </Sheet>

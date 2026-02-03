@@ -26,7 +26,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange>
           <ReactQueryProvider>
-            <ToastProvider>
+            <ToastProvider position="top-right">
               <AnchoredToastProvider>{children}</AnchoredToastProvider>
             </ToastProvider>
           </ReactQueryProvider>

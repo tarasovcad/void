@@ -11,6 +11,7 @@ import {
 } from "@/lib/web-fetch";
 import {headers} from "next/headers";
 import {Client} from "@upstash/qstash";
+import {randomUUID} from "crypto";
 
 export type AddBookmarkResult = {
   ok: true;
@@ -77,14 +78,18 @@ export async function addBookmark(input: {url: string}): Promise<AddBookmarkResu
 
   const supabase = await createClient();
 
+  const bookmarkId = randomUUID();
+
   const {data, error} = await supabase
     .from("bookmarks")
     .insert({
+      id: bookmarkId,
       url: normalized.toString(),
       title: metadata.title ?? null,
       user_id: session.user.id,
       description: metadata.description ?? null,
       kind: "website",
+      preview_image: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/bookmark-previews/${bookmarkId}/preview.png`,
     })
     .select("id")
     .single();
@@ -108,4 +113,46 @@ export async function addBookmark(input: {url: string}): Promise<AddBookmarkResu
   });
 
   return {ok: true, url: normalized.toString()};
+}
+
+export type UpdateBookmarkData = {
+  title?: string;
+  description?: string;
+  preview_image?: string;
+};
+
+export async function updateBookmark(
+  bookmarkId: string,
+  updates: UpdateBookmarkData,
+): Promise<{ok: true}> {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+
+  // Only include fields that are actually present in the updates object
+  const updateData: Record<string, string> = {};
+  if (updates.title !== undefined) updateData.title = updates.title;
+  if (updates.description !== undefined) updateData.description = updates.description;
+  if (updates.preview_image !== undefined) updateData.preview_image = updates.preview_image;
+
+  // If no fields to update, return early
+  if (Object.keys(updateData).length === 0) {
+    return {ok: true};
+  }
+
+  const supabase = await createClient();
+
+  const {error} = await supabase
+    .from("bookmarks")
+    .update(updateData)
+    .eq("id", bookmarkId)
+    .eq("user_id", session.user.id);
+
+  if (error) throw error;
+
+  return {ok: true};
 }
