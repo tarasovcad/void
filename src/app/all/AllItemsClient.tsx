@@ -6,6 +6,9 @@ import {cn} from "@/lib/utils";
 import {ScrollArea} from "@/components/coss-ui/scroll-area";
 import {useState} from "react";
 import {Bookmark, BookmarkMenu, GridCard, ItemRow} from "@/components/Bookmark";
+import {useInfiniteQuery} from "@tanstack/react-query";
+import {supabase} from "@/components/utils/supabase/client";
+import Spinner from "@/components/shadcn/coss-ui";
 
 type ViewMode = "grid" | "list";
 type TypeFilter = "all" | Bookmark["kind"];
@@ -161,20 +164,100 @@ function SortSelect({value, onChange}: {value: SortMode; onChange: (v: SortMode)
   );
 }
 
-export default function AllItemsClient({items}: {items: Bookmark[]}) {
+export default function AllItemsClient({
+  userId,
+  initialBookmarks,
+  totalCount,
+  PAGE_SIZE,
+}: {
+  userId: string | null;
+  initialBookmarks: Bookmark[];
+  totalCount: number;
+  PAGE_SIZE: number;
+}) {
   const [view, setView] = useState<ViewMode>("list");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [sort, setSort] = useState<SortMode>("recent");
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuItem, setMenuItem] = useState<Bookmark | undefined>(undefined);
+  const scrollAreaRootRef = React.useRef<HTMLDivElement | null>(null);
+  const bottomSentinelRef = React.useRef<HTMLDivElement | null>(null);
+
+  const bookmarksQuery = useInfiniteQuery({
+    queryKey: ["bookmarks", "all-items", userId, PAGE_SIZE],
+    enabled: !!userId,
+    initialPageParam: 0,
+    queryFn: async ({pageParam}) => {
+      const offset = typeof pageParam === "number" ? pageParam : 0;
+
+      if (!userId) {
+        return {items: [] as Bookmark[], nextOffset: undefined as number | undefined};
+      }
+
+      const {data, error} = await supabase
+        .from("bookmarks")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", {ascending: false})
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      if (error) throw error;
+
+      const items = (data ?? []) as Bookmark[];
+      const nextOffset = items.length < PAGE_SIZE ? undefined : offset + PAGE_SIZE;
+      return {items, nextOffset};
+    },
+    getNextPageParam: (lastPage) => lastPage.nextOffset,
+    initialData: {
+      pageParams: [0],
+      pages: [
+        {
+          items: initialBookmarks,
+          nextOffset: initialBookmarks.length < PAGE_SIZE ? undefined : PAGE_SIZE,
+        },
+      ],
+    },
+  });
+
+  const loadedBookmarks = React.useMemo(() => {
+    return bookmarksQuery.data?.pages.flatMap((p) => p.items) ?? [];
+  }, [bookmarksQuery.data]);
+
+  const {hasNextPage, isFetchingNextPage, fetchNextPage} = bookmarksQuery;
 
   const openMenu = React.useCallback((item: Bookmark) => {
     setMenuItem(item);
     setMenuOpen(true);
   }, []);
 
+  React.useEffect(() => {
+    const sentinel = bottomSentinelRef.current;
+    const root = scrollAreaRootRef.current?.querySelector(
+      '[data-slot="scroll-area-viewport"]',
+    ) as Element | null;
+
+    if (!sentinel || !root) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting) {
+          if (hasNextPage && !isFetchingNextPage) {
+            fetchNextPage();
+          }
+        }
+      },
+
+      {root, rootMargin: "200px 0px"},
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
   const filteredAndSortedItems = React.useMemo(() => {
-    const filtered = typeFilter === "all" ? items : items.filter((i) => i.kind === typeFilter);
+    const filtered =
+      typeFilter === "all" ? loadedBookmarks : loadedBookmarks.filter((i) => i.kind === typeFilter);
 
     const toTime = (iso: string) => {
       const t = Date.parse(iso);
@@ -199,7 +282,7 @@ export default function AllItemsClient({items}: {items: Bookmark[]}) {
     return [...filtered].sort(
       (a, b) => toTime(b.created_at) - toTime(a.created_at) || a.id.localeCompare(b.id),
     );
-  }, [items, sort, typeFilter]);
+  }, [loadedBookmarks, sort, typeFilter]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -213,24 +296,36 @@ export default function AllItemsClient({items}: {items: Bookmark[]}) {
         </div>
       </div>
       <BookmarkMenu item={menuItem} open={menuOpen} onOpenChange={setMenuOpen} />
-      <div className="text-muted-foreground px-6 py-3 text-xs">
-        {filteredAndSortedItems.length} items
+      <div className="text-muted-foreground px-6 py-3 text-xs">{totalCount} items</div>
+      <div ref={scrollAreaRootRef} className="h-auto min-h-0 flex-1">
+        <ScrollArea className="h-full" scrollbarGutter scrollFade>
+          {view === "grid" ? (
+            <div className="grid grid-cols-1 gap-6 px-6 pb-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredAndSortedItems.map((item) => (
+                <GridCard key={item.id} item={item} onOpenMenu={openMenu} />
+              ))}
+              {bookmarksQuery.isFetchingNextPage ? (
+                <div className="text-muted-foreground col-span-full py-6 text-center text-xs">
+                  <Spinner className="mx-auto size-4 animate-spin" />
+                </div>
+              ) : null}
+              <div ref={bottomSentinelRef} aria-hidden className="col-span-full h-px" />
+            </div>
+          ) : (
+            <div className="border-t">
+              {filteredAndSortedItems.map((item) => (
+                <ItemRow key={item.id} item={item} onOpenMenu={openMenu} />
+              ))}
+              {bookmarksQuery.isFetchingNextPage ? (
+                <div className="text-muted-foreground px-6 py-6 text-center text-xs">
+                  <Spinner className="mx-auto size-4 animate-spin" />
+                </div>
+              ) : null}
+              <div ref={bottomSentinelRef} aria-hidden className="h-px" />
+            </div>
+          )}
+        </ScrollArea>
       </div>
-      <ScrollArea className="h-auto min-h-0 flex-1" scrollbarGutter scrollFade>
-        {view === "grid" ? (
-          <div className="grid grid-cols-1 gap-6 px-6 pb-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredAndSortedItems.map((item) => (
-              <GridCard key={item.id} item={item} onOpenMenu={openMenu} />
-            ))}
-          </div>
-        ) : (
-          <div className="border-t">
-            {filteredAndSortedItems.map((item) => (
-              <ItemRow key={item.id} item={item} onOpenMenu={openMenu} />
-            ))}
-          </div>
-        )}
-      </ScrollArea>
     </div>
   );
 }

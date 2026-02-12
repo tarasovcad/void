@@ -3,29 +3,43 @@ import {auth} from "@/lib/auth";
 import {headers} from "next/headers";
 import AllItemsClient from "./AllItemsClient";
 import {createClient} from "@/components/utils/supabase/server";
-import {redirect} from "next/navigation";
 
 const page = async () => {
   const data = await auth.api.getSession({
     headers: await headers(),
   });
 
-  if (!data?.user?.id) {
-    redirect("/login");
-  }
+  // if (!data?.user?.id) {
+  //   redirect("/login");
+  // }
 
   const supabase = await createClient();
 
-  const {data: bookmarks} = await supabase
+  const PAGE_SIZE = 20;
+
+  const {
+    data: initialBookmarks,
+    count: totalCount,
+    error,
+  } = await supabase
     .from("bookmarks")
-    .select("*")
-    .eq("user_id", data?.user?.id);
-  if (!bookmarks) {
-    return <AppShell session={data}>No bookmarks found</AppShell>;
+    .select("*", {count: "exact"})
+    .eq("user_id", data?.user?.id)
+    .order("created_at", {ascending: false})
+    .range(0, PAGE_SIZE - 1);
+
+  if (error) {
+    return <AppShell session={data}>Failed to load bookmarks</AppShell>;
   }
+
   return (
     <AppShell session={data}>
-      <AllItemsClient items={bookmarks} />
+      <AllItemsClient
+        userId={data?.user?.id ?? null}
+        initialBookmarks={initialBookmarks ?? []}
+        totalCount={totalCount ?? 0}
+        PAGE_SIZE={PAGE_SIZE}
+      />
     </AppShell>
   );
 };
