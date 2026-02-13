@@ -184,7 +184,7 @@ export default function AllItemsClient({
   const bottomSentinelRef = React.useRef<HTMLDivElement | null>(null);
 
   const bookmarksQuery = useInfiniteQuery({
-    queryKey: ["bookmarks", "all-items", userId, PAGE_SIZE],
+    queryKey: ["bookmarks", "all-items", userId, PAGE_SIZE, sort],
     enabled: !!userId,
     initialPageParam: 0,
     queryFn: async ({pageParam}) => {
@@ -194,12 +194,18 @@ export default function AllItemsClient({
         return {items: [] as Bookmark[], nextOffset: undefined as number | undefined};
       }
 
-      const {data, error} = await supabase
-        .from("bookmarks")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", {ascending: false})
-        .range(offset, offset + PAGE_SIZE - 1);
+      let q = supabase.from("bookmarks").select("*").eq("user_id", userId);
+
+      if (sort === "oldest") {
+        q = q.order("created_at", {ascending: true});
+      } else if (sort === "az") {
+        q = q.order("title", {ascending: true}).order("id", {ascending: true});
+      } else {
+        // recent
+        q = q.order("created_at", {ascending: false});
+      }
+
+      const {data, error} = await q.range(offset, offset + PAGE_SIZE - 1);
 
       if (error) throw error;
 
@@ -208,15 +214,18 @@ export default function AllItemsClient({
       return {items, nextOffset};
     },
     getNextPageParam: (lastPage) => lastPage.nextOffset,
-    initialData: {
-      pageParams: [0],
-      pages: [
-        {
-          items: initialBookmarks,
-          nextOffset: initialBookmarks.length < PAGE_SIZE ? undefined : PAGE_SIZE,
-        },
-      ],
-    },
+    initialData:
+      sort === "recent"
+        ? {
+            pageParams: [0],
+            pages: [
+              {
+                items: initialBookmarks,
+                nextOffset: initialBookmarks.length < PAGE_SIZE ? undefined : PAGE_SIZE,
+              },
+            ],
+          }
+        : undefined,
   });
 
   const loadedBookmarks = React.useMemo(() => {
@@ -259,30 +268,8 @@ export default function AllItemsClient({
     const filtered =
       typeFilter === "all" ? loadedBookmarks : loadedBookmarks.filter((i) => i.kind === typeFilter);
 
-    const toTime = (iso: string) => {
-      const t = Date.parse(iso);
-      return Number.isFinite(t) ? t : 0;
-    };
-
-    const toText = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
-
-    if (sort === "az") {
-      return [...filtered].sort((a, b) => {
-        const at = toText((a as {title?: unknown}).title).trim();
-        const bt = toText((b as {title?: unknown}).title).trim();
-        return at.localeCompare(bt, undefined, {sensitivity: "base"}) || a.id.localeCompare(b.id);
-      });
-    }
-    if (sort === "oldest") {
-      return [...filtered].sort(
-        (a, b) => toTime(a.created_at) - toTime(b.created_at) || a.id.localeCompare(b.id),
-      );
-    }
-    // recent
-    return [...filtered].sort(
-      (a, b) => toTime(b.created_at) - toTime(a.created_at) || a.id.localeCompare(b.id),
-    );
-  }, [loadedBookmarks, sort, typeFilter]);
+    return filtered;
+  }, [loadedBookmarks, typeFilter]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -301,9 +288,15 @@ export default function AllItemsClient({
         <ScrollArea className="h-full" scrollbarGutter scrollFade>
           {view === "grid" ? (
             <div className="grid grid-cols-1 gap-6 px-6 pb-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredAndSortedItems.map((item) => (
-                <GridCard key={item.id} item={item} onOpenMenu={openMenu} />
-              ))}
+              {bookmarksQuery.isLoading && filteredAndSortedItems.length === 0 ? (
+                <div className="text-muted-foreground col-span-full py-8 text-center text-xs">
+                  <Spinner className="mx-auto size-4 animate-spin" />
+                </div>
+              ) : (
+                filteredAndSortedItems.map((item) => (
+                  <GridCard key={item.id} item={item} onOpenMenu={openMenu} />
+                ))
+              )}
               {bookmarksQuery.isFetchingNextPage ? (
                 <div className="text-muted-foreground col-span-full py-6 text-center text-xs">
                   <Spinner className="mx-auto size-4 animate-spin" />
@@ -313,9 +306,15 @@ export default function AllItemsClient({
             </div>
           ) : (
             <div className="border-t">
-              {filteredAndSortedItems.map((item) => (
-                <ItemRow key={item.id} item={item} onOpenMenu={openMenu} />
-              ))}
+              {bookmarksQuery.isLoading && filteredAndSortedItems.length === 0 ? (
+                <div className="text-muted-foreground px-6 py-8 text-center text-xs">
+                  <Spinner className="mx-auto size-4 animate-spin" />
+                </div>
+              ) : (
+                filteredAndSortedItems.map((item) => (
+                  <ItemRow key={item.id} item={item} onOpenMenu={openMenu} />
+                ))
+              )}
               {bookmarksQuery.isFetchingNextPage ? (
                 <div className="text-muted-foreground px-6 py-6 text-center text-xs">
                   <Spinner className="mx-auto size-4 animate-spin" />
