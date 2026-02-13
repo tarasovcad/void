@@ -36,16 +36,15 @@ function BookmarkHoverActions({
 }: {
   className?: string;
   onOptions?: (e: React.MouseEvent<HTMLButtonElement>) => void;
-  onDelete?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onDelete?: () => void;
 }) {
   const baseButtonClassName = cn(
     "pointer-events-auto inline-flex size-8 items-center justify-center rounded-md border",
     "bg-background text-foreground/90",
-    "hover:bg-muted focus-visible:ring-ring/50 outline-none focus-visible:ring-2",
+    "hover:bg-muted focus-visible:ring-ring/50 outline-none focus-visible:ring-2 cursor-pointer",
   );
 
   const stopNav = (e: React.MouseEvent<HTMLButtonElement>) => {
-    // These buttons can live inside a <Link>; prevent navigation when clicked.
     e.preventDefault();
     e.stopPropagation();
   };
@@ -65,7 +64,7 @@ function BookmarkHoverActions({
         className={baseButtonClassName}
         onClick={(e) => {
           stopNav(e);
-          onDelete?.(e);
+          onDelete?.();
         }}>
         <svg
           width="16"
@@ -164,26 +163,22 @@ const BookmarkImage = ({
   }, [attempt, status]);
 
   return (
-    <div className={cn(divClassName)}>
+    <div
+      className={cn(
+        fill ? "absolute inset-0" : "relative",
+        "grid place-items-center",
+        divClassName,
+      )}>
       {status !== "loaded" ? (
-        <div className={fallbackClassName}>
+        <div className={cn("text-muted-foreground", fallbackClassName)}>
           <svg
             width="20"
             height="20"
             viewBox="0 0 20 20"
             fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true">
-            <path d="M4.75 4.75H15.25V15.25H4.75V4.75Z" stroke="currentColor" strokeWidth="1" />
+            xmlns="http://www.w3.org/2000/svg">
             <path
-              d="M6.5 12.5L8.25 10.75L10.25 12.75L12 11L13.5 12.5"
-              stroke="currentColor"
-              strokeWidth="1"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M8 8.25C8 8.66421 7.66421 9 7.25 9C6.83579 9 6.5 8.66421 6.5 8.25C6.5 7.83579 6.83579 7.5 7.25 7.5C7.66421 7.5 8 7.83579 8 8.25Z"
+              d="M5.625 3.75H14.375V2.5H5.625V3.75ZM16.25 5.625V14.375H17.5V5.625H16.25ZM3.56694 13.9836L5.34084 12.2098L4.45696 11.3258L2.68306 13.0997L3.56694 13.9836ZM3.75 14.375V13.5417H2.5V14.375H3.75ZM3.75 13.5417V5.625H2.5V13.5417H3.75ZM7.99249 12.2098L13.0997 17.3169L13.9836 16.4331L8.87642 11.3258L7.99249 12.2098ZM14.375 16.25H13.5417V17.5H14.375V16.25ZM13.5417 16.25H5.625V17.5H13.5417V16.25ZM5.34084 12.2098C6.07307 11.4775 7.26026 11.4775 7.99249 12.2098L8.87642 11.3258C7.65598 10.1054 5.67735 10.1054 4.45696 11.3258L5.34084 12.2098ZM2.5 14.375C2.5 16.1009 3.89911 17.5 5.625 17.5V16.25C4.58947 16.25 3.75 15.4105 3.75 14.375H2.5ZM16.25 14.375C16.25 15.4105 15.4105 16.25 14.375 16.25V17.5C16.1009 17.5 17.5 16.1009 17.5 14.375H16.25ZM14.375 3.75C15.4105 3.75 16.25 4.58947 16.25 5.625H17.5C17.5 3.89911 16.1009 2.5 14.375 2.5V3.75ZM5.625 2.5C3.89911 2.5 2.5 3.89911 2.5 5.625H3.75C3.75 4.58947 4.58947 3.75 5.625 3.75V2.5ZM13.125 7.91667C13.125 8.492 12.6587 8.95833 12.0833 8.95833V10.2083C13.349 10.2083 14.375 9.18233 14.375 7.91667H13.125ZM12.0833 8.95833C11.508 8.95833 11.0417 8.492 11.0417 7.91667H9.79167C9.79167 9.18233 10.8177 10.2083 12.0833 10.2083V8.95833ZM11.0417 7.91667C11.0417 7.34137 11.508 6.875 12.0833 6.875V5.625C10.8177 5.625 9.79167 6.65102 9.79167 7.91667H11.0417ZM12.0833 6.875C12.6587 6.875 13.125 7.34137 13.125 7.91667H14.375C14.375 6.65102 13.349 5.625 12.0833 5.625V6.875Z"
               fill="currentColor"
             />
           </svg>
@@ -209,9 +204,11 @@ const BookmarkImage = ({
 export const ItemRow = ({
   item,
   onOpenMenu,
+  onDelete,
 }: {
   item: Bookmark;
   onOpenMenu?: (item: Bookmark) => void;
+  onDelete?: (item: Bookmark) => void;
 }) => {
   // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
   // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
@@ -226,13 +223,16 @@ export const ItemRow = ({
       }}
       className={[
         "group relative flex w-full cursor-pointer gap-5 border-b px-6 py-5 pr-16 text-left",
-        "hover:bg-muted",
+        "hover:bg-muted/80",
         "focus-visible:bg-muted! outline-none",
       ].join(" ")}>
       <BookmarkHoverActions
         className="top-4 right-4"
         onOptions={() => {
           onOpenMenu?.(item);
+        }}
+        onDelete={() => {
+          onDelete?.(item);
         }}
       />
       <div className="relative size-9 shrink-0 overflow-hidden rounded-md border">
@@ -271,9 +271,11 @@ export const ItemRow = ({
 export const GridCard = ({
   item,
   onOpenMenu,
+  onDelete,
 }: {
   item: Bookmark;
   onOpenMenu?: (item: Bookmark) => void;
+  onDelete?: (item: Bookmark) => void;
 }) => {
   // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
 
@@ -286,7 +288,7 @@ export const GridCard = ({
         onOpenMenu(item);
       }}
       className={[
-        "group bg-background relative w-full overflow-hidden rounded-md border text-left",
+        "group bg-background relative block w-full overflow-hidden rounded-md border text-left",
         "hover:bg-muted/30 focus-visible:bg-muted/30",
         "focus-visible:ring-ring/50 hover:border-foreground/30 outline-none focus-visible:ring-2",
       ].join(" ")}>
@@ -294,6 +296,9 @@ export const GridCard = ({
         <BookmarkHoverActions
           onOptions={() => {
             onOpenMenu?.(item);
+          }}
+          onDelete={() => {
+            onDelete?.(item);
           }}
         />
 
@@ -306,8 +311,8 @@ export const GridCard = ({
         />
       </div>
 
-      <div className="min-h-[92px] p-4">
-        <div className="text-foreground line-clamp-2 text-sm font-semibold">{item.title}</div>
+      <div className="p-4">
+        <div className="text-foreground line-clamp-1 text-sm font-semibold">{item.title}</div>
         <div className="text-muted-foreground mt-1 flex min-w-0 items-center gap-1 text-xs whitespace-nowrap">
           <span className="min-w-0 truncate">{item.url}</span>
           <span className="shrink-0">-</span>
@@ -336,10 +341,12 @@ export function BookmarkMenu({
   item,
   onOpenChange,
   open,
+  onDelete,
 }: {
   item?: Bookmark;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  onDelete?: (item: Bookmark) => void;
 }) {
   const data = React.useMemo(() => {
     return {
@@ -510,7 +517,15 @@ export function BookmarkMenu({
                   <ImageIcon className="size-4" />
                   Preview
                 </Button>
-                <Button variant="outline" className="" type="button">
+                <Button
+                  variant="outline"
+                  className=""
+                  type="button"
+                  onClick={() => {
+                    if (item) {
+                      onDelete?.(item);
+                    }
+                  }}>
                   <Trash2Icon className="size-4" />
                   Delete
                 </Button>

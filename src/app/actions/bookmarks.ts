@@ -160,3 +160,25 @@ export async function updateBookmark(
 
   return {ok: true};
 }
+
+export async function deleteBookmark(bookmarkId: string): Promise<{ok: true}> {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+
+  const supabase = await createClient();
+
+  const {error} = await supabase
+    .from("bookmarks")
+    .delete()
+    .eq("id", bookmarkId)
+    .eq("user_id", session.user.id);
+
+  if (error) throw error;
+
+  return {ok: true};
+}

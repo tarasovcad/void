@@ -1,17 +1,35 @@
 "use client";
 
 import * as React from "react";
+import {Button} from "@/components/coss-ui/button";
 import {Select, SelectItem, SelectPopup, SelectTrigger} from "@/components/coss-ui/select";
 import {cn} from "@/lib/utils";
 import {ScrollArea} from "@/components/coss-ui/scroll-area";
 import {useState} from "react";
 import NumberFlow from "@number-flow/react";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "@/components/coss-ui/alert-dialog";
 import {Bookmark, BookmarkMenu, GridCard, ItemRow} from "@/components/Bookmark";
-import {useInfiniteQuery, useMutationState} from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useMutationState,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {supabase} from "@/components/utils/supabase/client";
 import Spinner from "@/components/shadcn/coss-ui";
 import {Skeleton} from "@/components/coss-ui/skeleton";
 import {formatDateAbsolute} from "@/lib/formatDate";
+import {deleteBookmark} from "@/app/actions/bookmarks";
+import {toastManager} from "@/components/coss-ui/toast";
+import {AnimatedItem} from "@/components/AnimatedItem";
 
 type ViewMode = "grid" | "list";
 type TypeFilter = "all" | Bookmark["kind"];
@@ -314,6 +332,67 @@ function NewBookmarkGridCard({
   );
 }
 
+function DeleteBookmarkDialog({
+  open,
+  onOpenChange,
+  item,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  item?: Bookmark;
+}) {
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationKey: ["delete-bookmark"],
+    mutationFn: async (id: string) => {
+      return deleteBookmark(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({queryKey: ["bookmarks"]});
+      toastManager.add({
+        title: "Bookmark deleted",
+        type: "success",
+      });
+    },
+    onError: (error) => {
+      console.error("Failed to delete bookmark:", error);
+      toastManager.add({
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : "Failed to delete bookmark",
+        type: "error",
+      });
+    },
+  });
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogPopup>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This action cannot be undone. This will permanently delete your bookmark and remove it
+            from our servers.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button variant="ghost" />}>Cancel</AlertDialogClose>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              if (item) {
+                deleteMutation.mutate(item.id);
+                onOpenChange(false);
+              }
+            }}>
+            Delete Bookmark
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogPopup>
+    </AlertDialog>
+  );
+}
+
 export default function AllItemsClient({
   userId,
   initialBookmarks,
@@ -347,6 +426,29 @@ export default function AllItemsClient({
   const isError = latest?.status === "error";
   const inputUrl = latest?.inputUrl;
   const resultUrl = latest?.resultUrl;
+
+  const deleteMutations = useMutationState({
+    filters: {mutationKey: ["delete-bookmark"]},
+    select: (m) =>
+      m.state.status === "pending" || m.state.status === "success"
+        ? (m.state.variables as string)
+        : null,
+  }).filter((id): id is string => !!id);
+
+  // ── Track exit-animation lifecycle for deleted items ──
+  const [animatedOutIds, setAnimatedOutIds] = React.useState<Set<string>>(new Set());
+
+  const removingIds = React.useMemo(() => {
+    return new Set(deleteMutations.filter((id) => !animatedOutIds.has(id)));
+  }, [deleteMutations, animatedOutIds]);
+
+  const handleItemRemoved = React.useCallback((id: string) => {
+    setAnimatedOutIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
 
   const [animatingUrl, setAnimatingUrl] = useState<string | null>(null);
 
@@ -417,6 +519,14 @@ export default function AllItemsClient({
 
   const {hasNextPage, isFetchingNextPage, fetchNextPage} = bookmarksQuery;
 
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<Bookmark | undefined>(undefined);
+
+  const openDeleteDialog = React.useCallback((item: Bookmark) => {
+    setItemToDelete(item);
+    setDeleteDialogOpen(true);
+  }, []);
+
   const openMenu = React.useCallback((item: Bookmark) => {
     setMenuItem(item);
     setMenuOpen(true);
@@ -456,8 +566,12 @@ export default function AllItemsClient({
       filtered = filtered.filter((i) => i.id !== resolvedBookmark.id);
     }
 
+    if (animatedOutIds.size > 0) {
+      filtered = filtered.filter((i) => !animatedOutIds.has(i.id));
+    }
+
     return filtered;
-  }, [loadedBookmarks, typeFilter, resolvedBookmark]);
+  }, [loadedBookmarks, typeFilter, resolvedBookmark, animatedOutIds]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -470,7 +584,18 @@ export default function AllItemsClient({
           <ViewToggle value={view} onChange={setView} />
         </div>
       </div>
-      <BookmarkMenu item={menuItem} open={menuOpen} onOpenChange={setMenuOpen} />
+      <BookmarkMenu
+        item={menuItem}
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        onDelete={openDeleteDialog}
+      />
+
+      <DeleteBookmarkDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        item={itemToDelete}
+      />
       <div className="text-muted-foreground flex items-center gap-1 px-6 py-3 text-xs">
         <NumberFlow value={currentTotalCount} /> items
       </div>
@@ -491,7 +616,14 @@ export default function AllItemsClient({
                 </div>
               ) : (
                 filteredAndSortedItems.map((item) => (
-                  <GridCard key={item.id} item={item} onOpenMenu={openMenu} />
+                  <AnimatedItem
+                    key={item.id}
+                    id={item.id}
+                    isRemoving={removingIds.has(item.id)}
+                    onRemoved={handleItemRemoved}
+                    variant="grid">
+                    <GridCard item={item} onOpenMenu={openMenu} onDelete={openDeleteDialog} />
+                  </AnimatedItem>
                 ))
               )}
               {bookmarksQuery.isFetchingNextPage ? (
@@ -516,7 +648,14 @@ export default function AllItemsClient({
                 </div>
               ) : (
                 filteredAndSortedItems.map((item) => (
-                  <ItemRow key={item.id} item={item} onOpenMenu={openMenu} />
+                  <AnimatedItem
+                    key={item.id}
+                    id={item.id}
+                    isRemoving={removingIds.has(item.id)}
+                    onRemoved={handleItemRemoved}
+                    variant="list">
+                    <ItemRow item={item} onOpenMenu={openMenu} onDelete={openDeleteDialog} />
+                  </AnimatedItem>
                 ))
               )}
               {bookmarksQuery.isFetchingNextPage ? (
