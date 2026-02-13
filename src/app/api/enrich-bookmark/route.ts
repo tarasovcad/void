@@ -195,13 +195,13 @@ async function runEnrichment(inputUrl: string, id?: unknown) {
     }
   }
 
-  const previewResult = results[2];
-  if (previewResult?.status === "fulfilled") {
-    const preview = previewResult.value;
-    if (preview && typeof preview.dataUrl === "string" && typeof preview.contentType === "string") {
-      uploads.push(uploadPreviewToSupabase(preview, normalized, id));
-    }
-  }
+  // const previewResult = results[2];
+  // if (previewResult?.status === "fulfilled") {
+  //   const preview = previewResult.value;
+  //   if (preview && typeof preview.dataUrl === "string" && typeof preview.contentType === "string") {
+  //     uploads.push(uploadPreviewToSupabase(preview, normalized, id));
+  //   }
+  // }
 
   await Promise.allSettled(uploads);
 }

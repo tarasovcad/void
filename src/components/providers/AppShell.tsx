@@ -10,7 +10,7 @@ import Link from "next/link";
 import {InputGroup, InputGroupAddon, InputGroupInput} from "@/components/coss-ui/input-group";
 import type {Session} from "better-auth";
 import {Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger} from "@/components/coss-ui/menu";
-import {useMutation} from "@tanstack/react-query";
+import {useMutation, useQueryClient} from "@tanstack/react-query";
 import {authClient} from "@/components/utils/better-auth/auth-client";
 import {toastManager} from "@/components/coss-ui/toast";
 import {addBookmark, type AddBookmarkResult} from "@/app/actions/bookmarks";
@@ -386,9 +386,10 @@ const AppShell = ({children, session}: {children: React.ReactNode; session: AppS
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [addItemUrl, setAddItemUrl] = useState("");
   const [addItemUrlError, setAddItemUrlError] = useState<string | null>(null);
-  const router = useRouter();
+  const queryClient = useQueryClient();
 
   const addItemMutation = useMutation<AddBookmarkResult, Error, {url: string}>({
+    mutationKey: ["add-bookmark"],
     mutationFn: async (input) => {
       return await addBookmark(input);
     },
@@ -398,15 +399,17 @@ const AppShell = ({children, session}: {children: React.ReactNode; session: AppS
         description: res.url,
         type: "success",
       });
-      setAddItemOpen(false);
-      setAddItemUrl("");
-      setAddItemUrlError(null);
-      router.refresh();
+      queryClient.invalidateQueries({queryKey: ["bookmarks"]});
     },
     onError: (err) => {
       toastManager.add({
         title: "Submit failed",
-        description: err instanceof Error ? err.message : "Unknown error",
+        description:
+          (err instanceof Error ? err.message : "Unknown error")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 160) || "Unknown error",
         type: "error",
       });
     },
@@ -473,6 +476,9 @@ const AppShell = ({children, session}: {children: React.ReactNode; session: AppS
                   e.preventDefault();
                   const url = validateAddItemUrl(addItemUrl);
                   if (!url) return;
+                  setAddItemOpen(false);
+                  setAddItemUrl("");
+                  setAddItemUrlError(null);
                   addItemMutation.mutate({url});
                 }}>
                 <div className="flex flex-col gap-2">
@@ -505,6 +511,9 @@ const AppShell = ({children, session}: {children: React.ReactNode; session: AppS
                 onClick={() => {
                   const url = validateAddItemUrl(addItemUrl);
                   if (!url) return;
+                  setAddItemOpen(false);
+                  setAddItemUrl("");
+                  setAddItemUrlError(null);
                   addItemMutation.mutate({url});
                 }}>
                 Submit

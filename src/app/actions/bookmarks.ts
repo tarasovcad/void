@@ -26,7 +26,11 @@ export type UrlMetadataResult = {
   description?: string;
 };
 
-const qstash = new Client({token: process.env.QSTASH_TOKEN!});
+const qstash = new Client({
+  token: process.env.QSTASH_TOKEN!,
+  // Explicitly use local dev server when QSTASH_URL is set (e.g. http://127.0.0.1:8080)
+  baseUrl: process.env.QSTASH_URL,
+});
 
 export async function fetchUrlMetadata(
   normalized: URL,

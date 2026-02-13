@@ -5,10 +5,13 @@ import {Select, SelectItem, SelectPopup, SelectTrigger} from "@/components/coss-
 import {cn} from "@/lib/utils";
 import {ScrollArea} from "@/components/coss-ui/scroll-area";
 import {useState} from "react";
+import NumberFlow from "@number-flow/react";
 import {Bookmark, BookmarkMenu, GridCard, ItemRow} from "@/components/Bookmark";
-import {useInfiniteQuery} from "@tanstack/react-query";
+import {useInfiniteQuery, useMutationState} from "@tanstack/react-query";
 import {supabase} from "@/components/utils/supabase/client";
 import Spinner from "@/components/shadcn/coss-ui";
+import {Skeleton} from "@/components/coss-ui/skeleton";
+import {formatDateAbsolute} from "@/lib/formatDate";
 
 type ViewMode = "grid" | "list";
 type TypeFilter = "all" | Bookmark["kind"];
@@ -164,6 +167,153 @@ function SortSelect({value, onChange}: {value: SortMode; onChange: (v: SortMode)
   );
 }
 
+function CrossFade({
+  loaded,
+  delay = 0,
+  skeleton,
+  children,
+}: {
+  loaded: boolean;
+  delay?: number;
+  skeleton: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid items-start *:col-start-1 *:row-start-1">
+      <div
+        className={cn(
+          "transition-all duration-500",
+          loaded ? "pointer-events-none opacity-0" : "opacity-100",
+        )}
+        style={{transitionDelay: `${delay}ms`}}>
+        {skeleton}
+      </div>
+      <div
+        className={cn(
+          "transition-all duration-500",
+          loaded ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+        style={{transitionDelay: `${delay}ms`}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function NewBookmarkRow({
+  url,
+  bookmark,
+  onDone,
+}: {
+  url: string;
+  bookmark: Bookmark | null;
+  onDone: () => void;
+}) {
+  const loaded = !!bookmark;
+
+  React.useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(onDone, 900);
+    return () => clearTimeout(t);
+  }, [loaded, onDone]);
+
+  return (
+    <div className="flex w-full gap-5 border-b px-6 py-5 pr-16">
+      <CrossFade loaded={loaded} delay={0} skeleton={<Skeleton className="size-9 rounded-md" />}>
+        <div className="bg-muted size-9 rounded-md border" />
+      </CrossFade>
+      <div className="min-w-0 flex-1">
+        <CrossFade
+          loaded={!!bookmark?.title}
+          delay={100}
+          skeleton={<Skeleton className="h-4.5 w-48 rounded" />}>
+          <div className="text-foreground truncate text-sm font-semibold">
+            {bookmark?.title ?? url}
+          </div>
+        </CrossFade>
+        <div className="mt-0.5">
+          <CrossFade
+            loaded={loaded}
+            delay={200}
+            skeleton={<Skeleton className="h-3.5 w-64 rounded" />}>
+            <div className="text-muted-foreground flex min-w-0 items-center gap-1 text-xs whitespace-nowrap">
+              <span className="min-w-0 truncate">{bookmark?.url ?? url}</span>
+              {bookmark ? (
+                <>
+                  <span className="shrink-0">-</span>
+                  <span className="shrink-0">{formatDateAbsolute(bookmark.created_at)}</span>
+                </>
+              ) : null}
+            </div>
+          </CrossFade>
+        </div>
+        <div className="mt-2">
+          <CrossFade
+            loaded={!!bookmark?.description}
+            delay={300}
+            skeleton={<Skeleton className="h-4 w-40 rounded" />}>
+            <div className="text-muted-foreground line-clamp-2 text-xs">
+              {bookmark?.description ?? ""}
+            </div>
+          </CrossFade>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NewBookmarkGridCard({
+  url,
+  bookmark,
+  onDone,
+}: {
+  url: string;
+  bookmark: Bookmark | null;
+  onDone: () => void;
+}) {
+  const loaded = !!bookmark;
+
+  React.useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(onDone, 900);
+    return () => clearTimeout(t);
+  }, [loaded, onDone]);
+
+  return (
+    <div className="bg-background w-full overflow-hidden rounded-md border">
+      <CrossFade loaded={loaded} delay={0} skeleton={<Skeleton className="aspect-16/10 w-full" />}>
+        <div className="bg-muted aspect-16/10 w-full" />
+      </CrossFade>
+      <div className="min-h-[92px] p-4">
+        <CrossFade
+          loaded={!!bookmark?.title}
+          delay={150}
+          skeleton={<Skeleton className="h-4 w-3/4 rounded" />}>
+          <div className="text-foreground line-clamp-2 text-sm font-semibold">
+            {bookmark?.title ?? url}
+          </div>
+        </CrossFade>
+        <div className="mt-1">
+          <CrossFade
+            loaded={loaded}
+            delay={300}
+            skeleton={<Skeleton className="h-3 w-1/2 rounded" />}>
+            <div className="text-muted-foreground flex min-w-0 items-center gap-1 text-xs whitespace-nowrap">
+              <span className="min-w-0 truncate">{bookmark?.url ?? url}</span>
+              {bookmark ? (
+                <>
+                  <span className="shrink-0">-</span>
+                  <span className="shrink-0">{formatDateAbsolute(bookmark.created_at)}</span>
+                </>
+              ) : null}
+            </div>
+          </CrossFade>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AllItemsClient({
   userId,
   initialBookmarks,
@@ -182,6 +332,30 @@ export default function AllItemsClient({
   const [menuItem, setMenuItem] = useState<Bookmark | undefined>(undefined);
   const scrollAreaRootRef = React.useRef<HTMLDivElement | null>(null);
   const bottomSentinelRef = React.useRef<HTMLDivElement | null>(null);
+
+  // ── Track add-bookmark mutation for skeleton → real data crossfade ──
+  const addMutations = useMutationState({
+    filters: {mutationKey: ["add-bookmark"]},
+    select: (m) => ({
+      status: m.state.status as string,
+      inputUrl: (m.state.variables as {url: string} | undefined)?.url,
+      resultUrl: (m.state.data as {url: string} | undefined)?.url,
+    }),
+  });
+  const latest = addMutations.at(-1);
+  const isPending = latest?.status === "pending";
+  const isError = latest?.status === "error";
+  const inputUrl = latest?.inputUrl;
+  const resultUrl = latest?.resultUrl;
+
+  const [animatingUrl, setAnimatingUrl] = useState<string | null>(null);
+
+  if (isPending && inputUrl && animatingUrl !== inputUrl) {
+    setAnimatingUrl(inputUrl);
+  }
+  if (isError && animatingUrl !== null) {
+    setAnimatingUrl(null);
+  }
 
   const bookmarksQuery = useInfiniteQuery({
     queryKey: ["bookmarks", "all-items", userId, PAGE_SIZE, sort],
@@ -232,6 +406,15 @@ export default function AllItemsClient({
     return bookmarksQuery.data?.pages.flatMap((p) => p.items) ?? [];
   }, [bookmarksQuery.data]);
 
+  // Find the newly added bookmark once the query refetches
+  const resolvedBookmark =
+    animatingUrl && resultUrl ? (loadedBookmarks.find((b) => b.url === resultUrl) ?? null) : null;
+
+  const successCount = addMutations.filter((m) => m.status === "success").length;
+  const currentTotalCount = totalCount + successCount;
+
+  const handleTransitionDone = React.useCallback(() => setAnimatingUrl(null), []);
+
   const {hasNextPage, isFetchingNextPage, fetchNextPage} = bookmarksQuery;
 
   const openMenu = React.useCallback((item: Bookmark) => {
@@ -265,11 +448,16 @@ export default function AllItemsClient({
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   const filteredAndSortedItems = React.useMemo(() => {
-    const filtered =
+    let filtered =
       typeFilter === "all" ? loadedBookmarks : loadedBookmarks.filter((i) => i.kind === typeFilter);
 
+    // Exclude the bookmark being animated to avoid showing it twice
+    if (resolvedBookmark) {
+      filtered = filtered.filter((i) => i.id !== resolvedBookmark.id);
+    }
+
     return filtered;
-  }, [loadedBookmarks, typeFilter]);
+  }, [loadedBookmarks, typeFilter, resolvedBookmark]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -283,11 +471,20 @@ export default function AllItemsClient({
         </div>
       </div>
       <BookmarkMenu item={menuItem} open={menuOpen} onOpenChange={setMenuOpen} />
-      <div className="text-muted-foreground px-6 py-3 text-xs">{totalCount} items</div>
+      <div className="text-muted-foreground flex items-center gap-1 px-6 py-3 text-xs">
+        <NumberFlow value={currentTotalCount} /> items
+      </div>
       <div ref={scrollAreaRootRef} className="h-auto min-h-0 flex-1">
         <ScrollArea className="h-full" scrollbarGutter scrollFade>
           {view === "grid" ? (
             <div className="grid grid-cols-1 gap-6 px-6 pb-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {animatingUrl ? (
+                <NewBookmarkGridCard
+                  url={animatingUrl}
+                  bookmark={resolvedBookmark}
+                  onDone={handleTransitionDone}
+                />
+              ) : null}
               {bookmarksQuery.isLoading && filteredAndSortedItems.length === 0 ? (
                 <div className="text-muted-foreground col-span-full py-8 text-center text-xs">
                   <Spinner className="mx-auto size-4 animate-spin" />
@@ -306,6 +503,13 @@ export default function AllItemsClient({
             </div>
           ) : (
             <div className="border-t">
+              {animatingUrl ? (
+                <NewBookmarkRow
+                  url={animatingUrl}
+                  bookmark={resolvedBookmark}
+                  onDone={handleTransitionDone}
+                />
+              ) : null}
               {bookmarksQuery.isLoading && filteredAndSortedItems.length === 0 ? (
                 <div className="text-muted-foreground px-6 py-8 text-center text-xs">
                   <Spinner className="mx-auto size-4 animate-spin" />

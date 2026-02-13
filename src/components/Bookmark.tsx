@@ -226,8 +226,8 @@ export const ItemRow = ({
       }}
       className={[
         "group relative flex w-full cursor-pointer gap-5 border-b px-6 py-5 pr-16 text-left",
-        "hover:bg-muted/40 focus-visible:bg-muted/40",
-        "focus-visible:ring-ring/50 outline-none focus-visible:ring-2",
+        "hover:bg-muted",
+        "focus-visible:bg-muted! outline-none",
       ].join(" ")}>
       <BookmarkHoverActions
         className="top-4 right-4"
