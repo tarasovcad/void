@@ -1,8 +1,35 @@
 "use client";
 
 import {Checkbox as CheckboxPrimitive} from "@base-ui/react/checkbox";
+import {motion, type Variants} from "motion/react";
 
 import {cn} from "@/lib/utils";
+
+const CHECK_VARIANTS: Variants = {
+  unchecked: {
+    pathLength: 0,
+    opacity: 0,
+    transition: {duration: 0.075, opacity: {duration: 0.05}},
+  },
+  checked: {
+    pathLength: 1,
+    opacity: 1,
+    transition: {duration: 0.125, delay: 0.025, opacity: {duration: 0.05}},
+  },
+};
+
+const DASH_VARIANTS: Variants = {
+  unchecked: {
+    pathLength: 0,
+    opacity: 0,
+    transition: {duration: 0.075, opacity: {duration: 0.05}},
+  },
+  checked: {
+    pathLength: 1,
+    opacity: 1,
+    transition: {duration: 0.1, opacity: {duration: 0.05}},
+  },
+};
 
 function Checkbox({className, ...props}: CheckboxPrimitive.Root.Props) {
   return (
@@ -30,7 +57,13 @@ function Checkbox({className, ...props}: CheckboxPrimitive.Root.Props) {
                 viewBox="0 0 24 24"
                 width="24"
                 xmlns="http://www.w3.org/2000/svg">
-                <path d="M5.252 12h13.496" />
+                <motion.path
+                  d="M5.252 12h13.496"
+                  initial="unchecked"
+                  animate="checked"
+                  exit="unchecked"
+                  variants={DASH_VARIANTS}
+                />
               </svg>
             ) : (
               <svg
@@ -44,7 +77,13 @@ function Checkbox({className, ...props}: CheckboxPrimitive.Root.Props) {
                 viewBox="0 0 24 24"
                 width="24"
                 xmlns="http://www.w3.org/2000/svg">
-                <path d="M5.252 12.7 10.2 18.63 18.748 5.37" />
+                <motion.path
+                  d="M5.252 12.7 10.2 18.63 18.748 5.37"
+                  initial="unchecked"
+                  animate="checked"
+                  exit="unchecked"
+                  variants={CHECK_VARIANTS}
+                />
               </svg>
             )}
           </span>

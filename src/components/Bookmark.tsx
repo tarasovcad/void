@@ -16,6 +16,7 @@ import {zodResolver} from "@hookform/resolvers/zod";
 import {z} from "zod";
 import {updateBookmark, UpdateBookmarkData} from "@/app/actions/bookmarks";
 import {toastManager} from "@/components/coss-ui/toast";
+import {Checkbox} from "./coss-ui/checkbox";
 
 export type Bookmark = {
   id: string;
@@ -205,10 +206,20 @@ export const ItemRow = ({
   item,
   onOpenMenu,
   onDelete,
+  className,
+  selectionMode,
+  selectionIndex = 0,
+  selectedIds,
+  setSelected,
 }: {
   item: Bookmark;
   onOpenMenu?: (item: Bookmark) => void;
   onDelete?: (item: Bookmark) => void;
+  className?: string;
+  selectionMode?: boolean;
+  selectionIndex?: number;
+  selectedIds?: Set<string>;
+  setSelected?: (id: string, checked: boolean) => void;
 }) => {
   // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
   // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
@@ -221,11 +232,13 @@ export const ItemRow = ({
         e.preventDefault();
         onOpenMenu(item);
       }}
-      className={[
+      className={cn(
         "group relative flex w-full cursor-pointer gap-5 border-b px-6 py-5 pr-16 text-left",
         "hover:bg-muted/80",
         "focus-visible:bg-muted! outline-none",
-      ].join(" ")}>
+        selectionMode && selectedIds?.has(item.id) && "bg-muted",
+        className,
+      )}>
       <BookmarkHoverActions
         className="top-4 right-4"
         onOptions={() => {
@@ -235,17 +248,39 @@ export const ItemRow = ({
           onDelete?.(item);
         }}
       />
-      <div className="relative size-9 shrink-0 overflow-hidden rounded-md border">
-        <BookmarkImage
-          bookmark_id={item.id}
-          item={item}
-          type="favicon"
-          divClassName="absolute inset-0 grid grid-cols-1 grid-rows-1 place-items-center"
-          imageClassName="col-start-1 row-start-1 h-full max-h-6 w-full max-w-6 object-cover"
-          fallbackClassName="text-muted-foreground col-start-1 row-start-1"
-          height={24}
-          width={24}
-        />
+      <div className="flex items-center">
+        {/* Animated checkbox slot — always rendered, width animated via grid-cols */}
+        <div
+          className={cn(
+            "grid shrink-0 items-center transition-[grid-template-columns,opacity] duration-200 ease-out",
+            selectionMode ? "grid-cols-[1fr] opacity-100" : "grid-cols-[0fr] opacity-0",
+          )}
+          style={{
+            transitionDelay: selectionMode ? `${Math.min(selectionIndex * 20, 120)}ms` : "0ms",
+          }}>
+          <div className="min-w-0 overflow-hidden">
+            <div className="pr-3">
+              <Checkbox
+                checked={selectedIds?.has(item.id)}
+                onCheckedChange={(next) => setSelected?.(item.id, next === true)}
+                onClick={(e) => e.stopPropagation()}
+                aria-label={`Select ${item.title}`}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="relative size-9 shrink-0 overflow-hidden rounded-md border">
+          <BookmarkImage
+            bookmark_id={item.id}
+            item={item}
+            type="favicon"
+            divClassName="absolute inset-0 grid grid-cols-1 grid-rows-1 place-items-center"
+            imageClassName="col-start-1 row-start-1 h-full max-h-6 w-full max-w-6 object-cover"
+            fallbackClassName="text-muted-foreground col-start-1 row-start-1"
+            height={24}
+            width={24}
+          />
+        </div>
       </div>
 
       <div className="min-w-0 flex-1">
