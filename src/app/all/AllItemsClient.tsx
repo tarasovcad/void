@@ -3,13 +3,14 @@ import * as React from "react";
 import {Checkbox} from "@/components/coss-ui/checkbox";
 import {ScrollArea} from "@/components/coss-ui/scroll-area";
 import {cn} from "@/lib/utils";
-import {useState} from "react";
+import {useEffect, useState} from "react";
 import NumberFlow from "@number-flow/react";
-import {Bookmark, BookmarkMenu, GridCard, ItemRow} from "@/components/Bookmark";
+import {Bookmark, GridCard, ItemRow} from "@/components/bookmark/Bookmark";
+import {BookmarkMenu} from "@/components/bookmark/BookmarkMenu";
 import {useInfiniteQuery, useMutationState} from "@tanstack/react-query";
 import {supabase} from "@/components/utils/supabase/client";
 import Spinner from "@/components/shadcn/coss-ui";
-import {AnimatedItem} from "@/components/AnimatedItem";
+import {AnimatedItem} from "@/components/bookmark/AnimatedItem";
 import {toastManager} from "@/components/coss-ui/toast";
 import {ViewToggle, TypeSelect, SortSelect} from "./AllItemsToolbar";
 import type {ViewMode, TypeFilter, SortMode} from "./AllItemsToolbar";
@@ -44,6 +45,31 @@ export default function AllItemsClient({
   // ── UI-only selection state (no server writes yet) ──
   const [selectionMode, setSelectionMode] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+
+  // ── Keyboard shortcuts ──
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore when typing in an input/textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable)
+        return;
+
+      // Escape → exit selection mode
+      if (e.key === "Escape" && selectionMode) {
+        setSelectedIds(new Set());
+        setSelectionMode(false);
+        return;
+      }
+
+      // Shift+V → toggle list/grid view
+      if (e.key === "V" && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setView((v) => (v === "list" ? "grid" : "list"));
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectionMode]);
 
   // ── Context menu state ──
   const [menuOpen, setMenuOpen] = useState(false);

@@ -8,6 +8,25 @@ export function formatDateAbsolute(date: string) {
   return dateObject.toLocaleDateString("en-US", options);
 }
 
+export function formatDateWithTime(date: string) {
+  const dateObject = new Date(date);
+  const dateOptions: Intl.DateTimeFormatOptions = {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  };
+  const timeOptions: Intl.DateTimeFormatOptions = {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  };
+
+  const formattedDate = dateObject.toLocaleDateString("en-US", dateOptions);
+  const formattedTime = dateObject.toLocaleTimeString("en-US", timeOptions);
+
+  return `${formattedDate} - ${formattedTime}`;
+}
+
 export function formatTimeRelative(date: string) {
   const dateObject = new Date(date);
   const now = new Date();
