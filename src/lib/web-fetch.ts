@@ -54,7 +54,7 @@ export function extractMetaContentFromHtml(html: string, key: {name?: string; pr
   return undefined;
 }
 
-export function extractTitleFromHtml(html: string): string {
+export function extractTitleFromHtml(html: string): string | undefined {
   // Prefer OG title when present, then fallback to <title>.
   const ogTitle = extractMetaContentFromHtml(html, {property: "og:title"});
   if (ogTitle && ogTitle.trim()) return ogTitle.trim();
@@ -62,15 +62,41 @@ export function extractTitleFromHtml(html: string): string {
   const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
   const title = m ? decodeHtmlEntitiesMinimal(m[1] ?? "") : "";
   const cleaned = title.trim();
-  return cleaned ? cleaned : "Undefined";
+  return cleaned || undefined;
 }
 
-export function extractDescriptionFromHtml(html: string): string {
+export function extractDescriptionFromHtml(html: string): string | undefined {
   // Prefer OG description, then standard meta description.
   const og = extractMetaContentFromHtml(html, {property: "og:description"});
   const description = og ?? extractMetaContentFromHtml(html, {name: "description"}) ?? "";
   const cleaned = description.trim();
-  return cleaned ? cleaned : "Undefined";
+  return cleaned || undefined;
+}
+
+/**
+ * Detects whether the fetched HTML is a Cloudflare (or similar) bot-challenge
+ * page rather than the real site content.
+ */
+export function looksLikeChallengeHtml(html: string): boolean {
+  const lower = html.toLowerCase();
+
+  // Cloudflare "Just a moment..." interstitial
+  if (lower.includes("just a moment") && lower.includes("cf-")) return true;
+
+  // Cloudflare challenge markers
+  if (lower.includes("cf-challenge-running") || lower.includes("cf_chl_opt")) return true;
+
+  // Cloudflare "Checking your browser" / "Performing security verification"
+  if (lower.includes("checking your browser") || lower.includes("security verification"))
+    return true;
+
+  // Cloudflare Turnstile challenge
+  if (lower.includes("challenges.cloudflare.com")) return true;
+
+  // Generic bot-wall markers
+  if (lower.includes("enable javascript and cookies to continue")) return true;
+
+  return false;
 }
 
 export function extractOgImageUrlFromHtml(html: string) {
@@ -420,7 +446,9 @@ export async function fetchFaviconCandidates(
   options?: {userAgent?: string; timeoutMs?: number},
 ): Promise<{finalUrl?: string; baseUrl?: string; icons: BestIcon[]}> {
   const timeoutMs = options?.timeoutMs ?? 8000;
-  const userAgent = options?.userAgent ?? "void/1.0";
+  const userAgent =
+    options?.userAgent ??
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
   const origin = new URL(url).origin;
   const icons: BestIcon[] = [];
@@ -432,9 +460,20 @@ export async function fetchFaviconCandidates(
     finalUrl = htmlRes.url;
 
     const contentType = htmlRes.headers.get("content-type") ?? "";
-    const html = isHtmlContentType(contentType) ? await htmlRes.text() : "";
+    let html = isHtmlContentType(contentType) ? await htmlRes.text() : "";
 
-    const discovered = discoverFromHtml(html, htmlRes.url || url);
+    // If the HTML is a Cloudflare challenge, use Browserless to get the real page
+    if (html && looksLikeChallengeHtml(html)) {
+      try {
+        html = await fetchBrowserlessRenderedHtml(url);
+        // Update finalUrl since Browserless resolved the actual page
+        finalUrl = url;
+      } catch {
+        // Browserless fallback failed — continue with whatever we got
+      }
+    }
+
+    const discovered = discoverFromHtml(html, finalUrl || url);
     baseUrl = discovered.effectiveBase;
     icons.push(...discovered.icons);
 
@@ -460,11 +499,24 @@ export async function fetchBestFaviconOne(
 }
 
 export async function fetchResolvedOgImageUrl(url: string) {
-  const res = await fetchTextWithTimeout(url, 8000, {userAgent: "void-enrich-bookmark/1.0"});
+  const res = await fetchTextWithTimeout(url, 8000, {
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  });
   const contentType = res.headers.get("content-type") ?? "";
   if (!isHtmlContentType(contentType)) return undefined;
 
-  const html = await res.text();
+  let html = await res.text();
+
+  // Fall back to Browserless rendered HTML if we hit a challenge page
+  if (looksLikeChallengeHtml(html)) {
+    try {
+      html = await fetchBrowserlessRenderedHtml(url);
+    } catch {
+      return undefined;
+    }
+  }
+
   const og = extractOgImageUrlFromHtml(html);
   if (!og) return undefined;
   try {
@@ -495,6 +547,45 @@ function arrayBufferToBase64(ab: ArrayBuffer) {
   return btoaFn(binary);
 }
 
+/**
+ * Uses Browserless /content endpoint to fetch fully rendered HTML
+ * (after JS execution). This handles Cloudflare challenges and JS-rendered SPAs.
+ */
+export async function fetchBrowserlessRenderedHtml(url: string): Promise<string> {
+  const token = process.env.BROWSERLESS_API_KEY;
+  if (!token) throw new Error("Missing BROWSERLESS_API_KEY");
+
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 25_000);
+
+  try {
+    const response = await fetch(`https://production-sfo.browserless.io/content?token=${token}`, {
+      method: "POST",
+      headers: {"Cache-Control": "no-cache", "Content-Type": "application/json"},
+      body: JSON.stringify({
+        url,
+        gotoOptions: {waitUntil: "networkidle0", timeout: 15000},
+        waitForSelector: {
+          selector: "title",
+          timeout: 10000,
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(
+        `Browserless content failed: ${response.status} ${response.statusText}${text ? ` - ${text}` : ""}`,
+      );
+    }
+
+    return await response.text();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function fetchBrowserlessScreenshotDataUrl(url: string) {
   const token = process.env.BROWSERLESS_API_KEY;
   if (!token) throw new Error("Missing BROWSERLESS_API_KEY");
@@ -510,6 +601,11 @@ export async function fetchBrowserlessScreenshotDataUrl(url: string) {
         headers: {"Cache-Control": "no-cache", "Content-Type": "application/json"},
         body: JSON.stringify({
           url,
+          gotoOptions: {waitUntil: "networkidle0", timeout: 15000},
+          waitForSelector: {
+            selector: "body",
+            timeout: 10000,
+          },
           viewport: {width: 1920, height: 1080, deviceScaleFactor: 1},
           options: {
             type: "png",

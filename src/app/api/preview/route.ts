@@ -3,8 +3,10 @@ import {
   extractDescriptionFromHtml,
   extractOgImageUrlFromHtml,
   extractTitleFromHtml,
+  fetchBrowserlessRenderedHtml,
   fetchTextWithTimeout,
   isHtmlContentType,
+  looksLikeChallengeHtml,
   normalizeInputUrl,
 } from "@/lib/web-fetch";
 
@@ -37,6 +39,11 @@ async function fetchBrowserlessScreenshotDataUrl(url: string) {
     },
     body: JSON.stringify({
       url,
+      gotoOptions: {waitUntil: "networkidle0", timeout: 15000},
+      waitForSelector: {
+        selector: "body",
+        timeout: 10000,
+      },
     }),
   });
 
@@ -84,7 +91,10 @@ export async function GET(request: NextRequest) {
     // - HTML fetch for title/description/og:image
     // - Browserless screenshot (returns an image)
     const [res, screenshot] = await Promise.all([
-      fetchTextWithTimeout(normalizedUrl, 8000, {userAgent: "void-preview/1.0"}),
+      fetchTextWithTimeout(normalizedUrl, 8000, {
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      }),
       fetchBrowserlessScreenshotDataUrl(normalizedUrl).catch((e) => ({
         error: e instanceof Error ? e.message : "Browserless screenshot failed",
       })),
@@ -108,9 +118,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const html = await res.text();
+    let html = await res.text();
+
+    // If the response looks like a Cloudflare/bot challenge, fall back to
+    // Browserless rendered HTML for metadata extraction
+    if (looksLikeChallengeHtml(html)) {
+      try {
+        html = await fetchBrowserlessRenderedHtml(normalizedUrl);
+      } catch {
+        // Browserless fallback failed — continue with whatever we got
+      }
+    }
+
     result.title = extractTitleFromHtml(html);
     result.description = extractDescriptionFromHtml(html);
+
+    // Graceful fallback: use hostname as title when extraction failed
+    if (!result.title) {
+      result.title = normalized.hostname.replace(/^www\./, "");
+    }
+
     const ogImage = extractOgImageUrlFromHtml(html);
     if (ogImage) {
       try {

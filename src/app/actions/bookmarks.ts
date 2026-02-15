@@ -5,8 +5,10 @@ import {auth} from "@/lib/auth";
 import {
   extractDescriptionFromHtml,
   extractTitleFromHtml,
+  fetchBrowserlessRenderedHtml,
   fetchTextWithTimeout,
   isHtmlContentType,
+  looksLikeChallengeHtml,
   normalizeInputUrl,
 } from "@/lib/web-fetch";
 import {headers} from "next/headers";
@@ -41,8 +43,10 @@ export async function fetchUrlMetadata(
     normalizedUrl: normalized.toString(),
   };
 
+  // --- Fast path: simple fetch (works for ~95% of sites) ---
   const res = await fetchTextWithTimeout(normalized.toString(), 8000, {
-    userAgent: "void-metadata/1.0",
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   });
   result.finalUrl = res.url;
 
@@ -51,9 +55,35 @@ export async function fetchUrlMetadata(
     return result;
   }
 
-  const html = await res.text();
+  let html = await res.text();
+  let usedBrowserless = false;
+
+  // --- Fallback: if the HTML looks like a Cloudflare/bot challenge page,
+  //     use Browserless to get the real rendered HTML ---
+  if (looksLikeChallengeHtml(html)) {
+    try {
+      html = await fetchBrowserlessRenderedHtml(normalized.toString());
+      usedBrowserless = true;
+    } catch {
+      // Browserless fallback failed — continue with whatever we got
+    }
+  }
+
   result.title = extractTitleFromHtml(html);
   result.description = extractDescriptionFromHtml(html);
+
+  // If title/description are still empty after Browserless, and it still
+  // looks like a challenge page, treat as unavailable (don't store garbage)
+  if (!usedBrowserless && looksLikeChallengeHtml(html)) {
+    result.title = undefined;
+    result.description = undefined;
+  }
+
+  // Graceful fallback: use the hostname as title when extraction failed
+  if (!result.title) {
+    result.title = normalized.hostname.replace(/^www\./, "");
+  }
+
   return result;
 }
 

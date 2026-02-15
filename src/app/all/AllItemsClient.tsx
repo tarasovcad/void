@@ -225,6 +225,7 @@ export default function AllItemsClient({
 
   // Optimistic total: server count + successful adds – successful deletes/archives
   const addSuccessCount = addMutations.filter((m) => m.status === "success").length;
+
   const deleteSuccessCount = useMutationState({
     filters: {mutationKey: ["delete-bookmark"]},
     select: (m) => {
@@ -233,6 +234,7 @@ export default function AllItemsClient({
       return Array.isArray(vars) ? vars.length : 1;
     },
   }).reduce((sum, n) => sum + n, 0);
+
   const archiveSuccessCount = useMutationState({
     filters: {mutationKey: ["archive-bookmark"]},
     select: (m) => {
@@ -241,6 +243,7 @@ export default function AllItemsClient({
       return Array.isArray(vars) ? vars.length : 1;
     },
   }).reduce((sum, n) => sum + n, 0);
+
   const currentTotalCount = totalCount + addSuccessCount - deleteSuccessCount - archiveSuccessCount;
 
   const handleTransitionDone = React.useCallback(() => setAnimatingUrl(null), []);
