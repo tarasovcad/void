@@ -18,13 +18,16 @@ import {toastManager} from "@/components/coss-ui/toast";
 export function DeleteBookmarkDialog({
   open,
   onOpenChange,
-  item,
+  items,
+  onDeleted,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  item?: Bookmark;
+  items: Bookmark[];
+  onDeleted?: () => void;
 }) {
   const queryClient = useQueryClient();
+  const count = items.length;
 
   const deleteMutation = useMutation({
     mutationKey: ["delete-bookmark"],
@@ -33,10 +36,6 @@ export function DeleteBookmarkDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({queryKey: ["bookmarks"]});
-      toastManager.add({
-        title: "Bookmark deleted",
-        type: "success",
-      });
     },
     onError: (error) => {
       console.error("Failed to delete bookmark:", error);
@@ -48,27 +47,39 @@ export function DeleteBookmarkDialog({
     },
   });
 
+  const handleDelete = () => {
+    if (count === 0) return;
+
+    for (const item of items) {
+      deleteMutation.mutate(item.id);
+    }
+
+    toastManager.add({
+      title: count === 1 ? "Bookmark deleted" : `${count} bookmarks deleted`,
+      type: "success",
+    });
+
+    onOpenChange(false);
+    onDeleted?.();
+  };
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPopup>
         <AlertDialogHeader>
-          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+          <AlertDialogTitle>
+            {count <= 1 ? "Delete bookmark?" : `Delete ${count} bookmarks?`}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete your bookmark and remove it
-            from our servers.
+            {count <= 1
+              ? "This bookmark will be removed from your list."
+              : `These ${count} bookmarks will be removed from your list.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="ghost" />}>Cancel</AlertDialogClose>
-          <Button
-            variant="destructive"
-            onClick={() => {
-              if (item) {
-                deleteMutation.mutate(item.id);
-                onOpenChange(false);
-              }
-            }}>
-            Delete Bookmark
+          <Button variant="destructive" onClick={handleDelete}>
+            {count <= 1 ? "Delete Bookmark" : `Delete ${count} Bookmarks`}
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>

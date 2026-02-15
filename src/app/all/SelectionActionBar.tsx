@@ -8,21 +8,29 @@ import NumberFlow from "@number-flow/react";
 export function SelectionActionBar({
   visible,
   selectedCount,
+  allSelected,
   onClearSelection,
+  onSelectAll,
+  onCopy,
+  onDelete,
 }: {
   visible: boolean;
   selectedCount: number;
+  allSelected: boolean;
   onClearSelection: () => void;
+  onSelectAll: () => void;
+  onCopy: () => void;
+  onDelete: () => void;
 }) {
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-x-0 bottom-6 z-30 mx-auto flex w-fit justify-center transition-all duration-200 ease-out",
+        "pointer-events-none absolute inset-x-0 bottom-6 z-30 flex justify-center transition-all duration-200 ease-out",
         visible ? "pointer-events-auto translate-y-0 opacity-100" : "translate-y-3 opacity-0",
       )}>
       <motion.div
         layout
-        transition={{layout: {duration: 0.2, ease: "linear"}}}
+        transition={{layout: {duration: 0.15, ease: "easeOut"}}}
         className="bg-background/90 ring-border flex items-center gap-1 rounded-xl p-1.5 shadow-lg ring-1 backdrop-blur">
         <div className="flex items-center gap-0.5">
           <span className="text-foreground flex items-center gap-1 pl-2 text-sm font-medium tabular-nums">
@@ -47,9 +55,24 @@ export function SelectionActionBar({
             </svg>
           </Button>
         </div>
-        {/* divider line */}
         <div className="bg-foreground/30 mr-2 ml-1 h-5 w-px" />
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" onClick={onSelectAll}>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg">
+            <path
+              fillRule="evenodd"
+              clipRule="evenodd"
+              d="M7.00033 1.16667C3.77866 1.16667 1.16699 3.77834 1.16699 7.00001C1.16699 10.2216 3.77866 12.8333 7.00033 12.8333C10.222 12.8333 12.8337 10.2216 12.8337 7.00001C12.8337 3.77834 10.222 1.16667 7.00033 1.16667ZM9.08895 5.81871C9.24196 5.6317 9.21437 5.35607 9.02735 5.20306C8.84033 5.05006 8.56471 5.07762 8.4117 5.26463L6.09283 8.09883L5.26802 7.274C5.09717 7.10314 4.82015 7.10314 4.6493 7.274C4.47845 7.44486 4.47845 7.72182 4.6493 7.89268L5.81597 9.05935C5.90337 9.14679 6.02365 9.19311 6.14714 9.18698C6.27058 9.1808 6.38567 9.1227 6.46395 9.02703L9.08895 5.81871Z"
+              fill="currentColor"
+            />
+          </svg>
+          {allSelected ? "Deselect all" : "Select all"}
+        </Button>
+        <Button variant="outline" size="sm" onClick={onCopy} className="w-[74px]">
           <svg
             width="14"
             height="14"
@@ -65,7 +88,7 @@ export function SelectionActionBar({
           </svg>
           Copy
         </Button>
-        <Button variant="favorite" size="sm">
+        <Button variant="favorite" size="sm" disabled className="w-[92px]">
           <svg
             width="14"
             height="14"
@@ -79,7 +102,7 @@ export function SelectionActionBar({
           </svg>
           Favorite
         </Button>
-        <Button variant="destructive" size="sm">
+        <Button variant="destructive" size="sm" className="w-[81px]" onClick={onDelete}>
           <svg
             width="14"
             height="14"

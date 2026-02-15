@@ -10,6 +10,7 @@ import {useInfiniteQuery, useMutationState} from "@tanstack/react-query";
 import {supabase} from "@/components/utils/supabase/client";
 import Spinner from "@/components/shadcn/coss-ui";
 import {AnimatedItem} from "@/components/AnimatedItem";
+import {toastManager} from "@/components/coss-ui/toast";
 import {ViewToggle, TypeSelect, SortSelect} from "./AllItemsToolbar";
 import type {ViewMode, TypeFilter, SortMode} from "./AllItemsToolbar";
 import {NewBookmarkRow, NewBookmarkGridCard} from "./NewBookmarkPlaceholder";
@@ -50,7 +51,7 @@ export default function AllItemsClient({
 
   // ── Delete dialog state ──
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<Bookmark | undefined>(undefined);
+  const [itemsToDelete, setItemsToDelete] = useState<Bookmark[]>([]);
 
   // ── Refs for infinite scroll ──
   const scrollAreaRootRef = React.useRef<HTMLDivElement | null>(null);
@@ -166,9 +167,13 @@ export default function AllItemsClient({
   const resolvedBookmark =
     animatingUrl && resultUrl ? (allBookmarks.find((b) => b.url === resultUrl) ?? null) : null;
 
-  // Optimistic total: server count + successful adds in this session
-  const successCount = addMutations.filter((m) => m.status === "success").length;
-  const currentTotalCount = totalCount + successCount;
+  // Optimistic total: server count + successful adds – successful deletes
+  const addSuccessCount = addMutations.filter((m) => m.status === "success").length;
+  const deleteSuccessCount = useMutationState({
+    filters: {mutationKey: ["delete-bookmark"]},
+    select: (m) => m.state.status === "success",
+  }).filter(Boolean).length;
+  const currentTotalCount = totalCount + addSuccessCount - deleteSuccessCount;
 
   const handleTransitionDone = React.useCallback(() => setAnimatingUrl(null), []);
 
@@ -176,9 +181,16 @@ export default function AllItemsClient({
 
   // ── Callbacks ──
   const openDeleteDialog = React.useCallback((item: Bookmark) => {
-    setItemToDelete(item);
+    setItemsToDelete([item]);
     setDeleteDialogOpen(true);
   }, []);
+
+  const handleDeleteSelected = React.useCallback(() => {
+    const selectedBookmarks = allBookmarks.filter((item) => selectedIds.has(item.id));
+    if (selectedBookmarks.length === 0) return;
+    setItemsToDelete(selectedBookmarks);
+    setDeleteDialogOpen(true);
+  }, [allBookmarks, selectedIds]);
 
   const openMenu = React.useCallback((item: Bookmark) => {
     setMenuItem(item);
@@ -267,6 +279,36 @@ export default function AllItemsClient({
 
   const isInitialLoad = bookmarksQuery.isLoading && visibleItems.length === 0;
 
+  const handleClearSelection = React.useCallback(() => {
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+  }, []);
+
+  const allSelected = selectedIds.size > 0 && selectedIds.size === visibleItems.length;
+
+  const handleSelectAll = React.useCallback(() => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(visibleItems.map((i) => i.id)));
+    }
+  }, [allSelected, visibleItems]);
+
+  const handleCopySelected = React.useCallback(() => {
+    const selectedBookmarks = allBookmarks.filter((item) => selectedIds.has(item.id));
+    const urls = selectedBookmarks.map((item) => item.url).join("\n\n");
+
+    if (urls) {
+      navigator.clipboard.writeText(urls);
+      toastManager.add({
+        title: "Copied to clipboard",
+        description: `${selectedBookmarks.length} link${selectedBookmarks.length > 1 ? "s" : ""} copied to your clipboard.`,
+        type: "success",
+      });
+      handleClearSelection();
+    }
+  }, [allBookmarks, selectedIds, handleClearSelection]);
+
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       {/* Toolbar */}
@@ -321,7 +363,8 @@ export default function AllItemsClient({
       <DeleteBookmarkDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        item={itemToDelete}
+        items={itemsToDelete}
+        onDeleted={handleClearSelection}
       />
 
       {/* Item count */}
@@ -458,7 +501,11 @@ export default function AllItemsClient({
       <SelectionActionBar
         visible={selectionMode && selectedCount > 0}
         selectedCount={selectedCount}
-        onClearSelection={() => setSelectedIds(new Set())}
+        allSelected={allSelected}
+        onClearSelection={handleClearSelection}
+        onSelectAll={handleSelectAll}
+        onCopy={handleCopySelected}
+        onDelete={handleDeleteSelected}
       />
     </div>
   );
