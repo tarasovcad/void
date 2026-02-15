@@ -10,9 +10,9 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "@/components/coss-ui/alert-dialog";
-import type {Bookmark} from "@/components/Bookmark";
+import type {Bookmark} from "@/components/bookmark/Bookmark";
 import {useMutation, useQueryClient} from "@tanstack/react-query";
-import {deleteBookmark} from "@/app/actions/bookmarks";
+import {deleteBookmarks} from "@/app/actions/bookmarks";
 import {toastManager} from "@/components/coss-ui/toast";
 
 export function DeleteBookmarkDialog({
@@ -31,8 +31,8 @@ export function DeleteBookmarkDialog({
 
   const deleteMutation = useMutation({
     mutationKey: ["delete-bookmark"],
-    mutationFn: async (id: string) => {
-      return deleteBookmark(id);
+    mutationFn: async (ids: string | string[]) => {
+      return deleteBookmarks(ids);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({queryKey: ["bookmarks"]});
@@ -50,9 +50,8 @@ export function DeleteBookmarkDialog({
   const handleDelete = () => {
     if (count === 0) return;
 
-    for (const item of items) {
-      deleteMutation.mutate(item.id);
-    }
+    const ids = items.map((item) => item.id);
+    deleteMutation.mutate(ids);
 
     toastManager.add({
       title: count === 1 ? "Bookmark deleted" : `${count} bookmarks deleted`,

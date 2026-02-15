@@ -7,7 +7,12 @@ import {useEffect, useState} from "react";
 import NumberFlow from "@number-flow/react";
 import {Bookmark, GridCard, ItemRow} from "@/components/bookmark/Bookmark";
 import {BookmarkMenu} from "@/components/bookmark/BookmarkMenu";
-import {useInfiniteQuery, useMutationState} from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useMutationState,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {supabase} from "@/components/utils/supabase/client";
 import Spinner from "@/components/shadcn/coss-ui";
 import {AnimatedItem} from "@/components/bookmark/AnimatedItem";
@@ -17,6 +22,7 @@ import type {ViewMode, TypeFilter, SortMode} from "./AllItemsToolbar";
 import {NewBookmarkRow, NewBookmarkGridCard} from "./NewBookmarkPlaceholder";
 import {DeleteBookmarkDialog} from "./DeleteBookmarkDialog";
 import {SelectionActionBar} from "./SelectionActionBar";
+import {archiveBookmarks} from "@/app/actions/bookmarks";
 
 function LoadingSpinner({className}: {className?: string}) {
   return (
@@ -108,9 +114,21 @@ export default function AllItemsClient({
     filters: {mutationKey: ["delete-bookmark"]},
     select: (m) =>
       m.state.status === "pending" || m.state.status === "success"
-        ? (m.state.variables as string)
+        ? (m.state.variables as string | string[])
         : null,
-  }).filter((id): id is string => !!id);
+  })
+    .filter((v): v is string | string[] => !!v)
+    .flat();
+
+  const archivingIds = useMutationState({
+    filters: {mutationKey: ["archive-bookmark"]},
+    select: (m) =>
+      m.state.status === "pending" || m.state.status === "success"
+        ? (m.state.variables as string | string[])
+        : null,
+  })
+    .filter((v): v is string | string[] => !!v)
+    .flat();
 
   // ── Exit-animation lifecycle ──
   // Once the exit animation finishes, we add the ID to `animatedOutIds`
@@ -118,8 +136,15 @@ export default function AllItemsClient({
   const [animatedOutIds, setAnimatedOutIds] = React.useState<Set<string>>(new Set());
 
   const removingIds = React.useMemo(() => {
-    return new Set(deletingIds.filter((id) => !animatedOutIds.has(id)));
-  }, [deletingIds, animatedOutIds]);
+    const map = new Map<string, "delete" | "archive">();
+    for (const id of deletingIds) {
+      if (!animatedOutIds.has(id)) map.set(id, "delete");
+    }
+    for (const id of archivingIds) {
+      if (!animatedOutIds.has(id) && !map.has(id)) map.set(id, "archive");
+    }
+    return map;
+  }, [deletingIds, archivingIds, animatedOutIds]);
 
   const handleItemRemoved = React.useCallback((id: string) => {
     setAnimatedOutIds((prev) => new Set(prev).add(id));
@@ -150,7 +175,12 @@ export default function AllItemsClient({
         return {items: [] as Bookmark[], nextOffset: undefined as number | undefined};
       }
 
-      let q = supabase.from("bookmarks").select("*").eq("user_id", userId);
+      let q = supabase
+        .from("bookmarks")
+        .select("*")
+        .eq("user_id", userId)
+        .is("archived_at", null)
+        .is("deleted_at", null);
 
       // Apply sort order
       if (sort === "oldest") {
@@ -193,35 +223,29 @@ export default function AllItemsClient({
   const resolvedBookmark =
     animatingUrl && resultUrl ? (allBookmarks.find((b) => b.url === resultUrl) ?? null) : null;
 
-  // Optimistic total: server count + successful adds – successful deletes
+  // Optimistic total: server count + successful adds – successful deletes/archives
   const addSuccessCount = addMutations.filter((m) => m.status === "success").length;
   const deleteSuccessCount = useMutationState({
     filters: {mutationKey: ["delete-bookmark"]},
-    select: (m) => m.state.status === "success",
-  }).filter(Boolean).length;
-  const currentTotalCount = totalCount + addSuccessCount - deleteSuccessCount;
+    select: (m) => {
+      if (m.state.status !== "success") return 0;
+      const vars = m.state.variables as string | string[];
+      return Array.isArray(vars) ? vars.length : 1;
+    },
+  }).reduce((sum, n) => sum + n, 0);
+  const archiveSuccessCount = useMutationState({
+    filters: {mutationKey: ["archive-bookmark"]},
+    select: (m) => {
+      if (m.state.status !== "success") return 0;
+      const vars = m.state.variables as string | string[];
+      return Array.isArray(vars) ? vars.length : 1;
+    },
+  }).reduce((sum, n) => sum + n, 0);
+  const currentTotalCount = totalCount + addSuccessCount - deleteSuccessCount - archiveSuccessCount;
 
   const handleTransitionDone = React.useCallback(() => setAnimatingUrl(null), []);
 
   const {hasNextPage, isFetchingNextPage, fetchNextPage} = bookmarksQuery;
-
-  // ── Callbacks ──
-  const openDeleteDialog = React.useCallback((item: Bookmark) => {
-    setItemsToDelete([item]);
-    setDeleteDialogOpen(true);
-  }, []);
-
-  const handleDeleteSelected = React.useCallback(() => {
-    const selectedBookmarks = allBookmarks.filter((item) => selectedIds.has(item.id));
-    if (selectedBookmarks.length === 0) return;
-    setItemsToDelete(selectedBookmarks);
-    setDeleteDialogOpen(true);
-  }, [allBookmarks, selectedIds]);
-
-  const openMenu = React.useCallback((item: Bookmark) => {
-    setMenuItem(item);
-    setMenuOpen(true);
-  }, []);
 
   // ── Infinite scroll via IntersectionObserver ──
   // Watches a sentinel div at the bottom of the list. When it enters the
@@ -310,6 +334,50 @@ export default function AllItemsClient({
     setSelectionMode(false);
   }, []);
 
+  const queryClient = useQueryClient();
+
+  const archiveMutation = useMutation({
+    mutationKey: ["archive-bookmark"],
+    mutationFn: async (ids: string | string[]) => {
+      return archiveBookmarks(ids);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({queryKey: ["bookmarks"]});
+    },
+    onError: (error) => {
+      console.error("Failed to archive bookmark:", error);
+      toastManager.add({
+        title: "Archive failed",
+        description: error instanceof Error ? error.message : "Failed to archive bookmark",
+        type: "error",
+      });
+    },
+  });
+
+  const handleArchive = React.useCallback(
+    (item: Bookmark) => {
+      archiveMutation.mutate(item.id);
+      setMenuOpen(false);
+      toastManager.add({
+        title: "Bookmark archived",
+        type: "success",
+      });
+    },
+    [archiveMutation],
+  );
+
+  const handleArchiveSelected = React.useCallback(() => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+
+    archiveMutation.mutate(ids);
+    toastManager.add({
+      title: ids.length === 1 ? "Bookmark archived" : `${ids.length} bookmarks archived`,
+      type: "success",
+    });
+    handleClearSelection();
+  }, [selectedIds, archiveMutation, handleClearSelection]);
+
   const allSelected = selectedIds.size > 0 && selectedIds.size === visibleItems.length;
 
   const handleSelectAll = React.useCallback(() => {
@@ -334,6 +402,24 @@ export default function AllItemsClient({
       handleClearSelection();
     }
   }, [allBookmarks, selectedIds, handleClearSelection]);
+
+  // ── Callbacks ──
+  const openDeleteDialog = React.useCallback((item: Bookmark) => {
+    setItemsToDelete([item]);
+    setDeleteDialogOpen(true);
+  }, []);
+
+  const handleDeleteSelected = React.useCallback(() => {
+    const selectedBookmarks = allBookmarks.filter((item) => selectedIds.has(item.id));
+    if (selectedBookmarks.length === 0) return;
+    setItemsToDelete(selectedBookmarks);
+    setDeleteDialogOpen(true);
+  }, [allBookmarks, selectedIds]);
+
+  const openMenu = React.useCallback((item: Bookmark) => {
+    setMenuItem(item);
+    setMenuOpen(true);
+  }, []);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -385,6 +471,7 @@ export default function AllItemsClient({
         open={menuOpen}
         onOpenChange={setMenuOpen}
         onDelete={openDeleteDialog}
+        onArchive={handleArchive}
       />
       <DeleteBookmarkDialog
         open={deleteDialogOpen}
@@ -420,7 +507,8 @@ export default function AllItemsClient({
                     id={item.id}
                     isRemoving={removingIds.has(item.id)}
                     onRemoved={handleItemRemoved}
-                    variant="grid">
+                    variant="grid"
+                    kind={removingIds.get(item.id) ?? "delete"}>
                     <div
                       className={cn(
                         "relative",
@@ -485,7 +573,8 @@ export default function AllItemsClient({
                     id={item.id}
                     isRemoving={removingIds.has(item.id)}
                     onRemoved={handleItemRemoved}
-                    variant="list">
+                    variant="list"
+                    kind={removingIds.get(item.id) ?? "delete"}>
                     <div
                       className={cn(
                         "relative",
@@ -531,6 +620,7 @@ export default function AllItemsClient({
         onClearSelection={handleClearSelection}
         onSelectAll={handleSelectAll}
         onCopy={handleCopySelected}
+        onArchive={handleArchiveSelected}
         onDelete={handleDeleteSelected}
       />
     </div>

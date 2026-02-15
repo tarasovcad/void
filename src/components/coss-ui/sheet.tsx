@@ -3,7 +3,7 @@
 import {Dialog as SheetPrimitive} from "@base-ui/react/dialog";
 import {XIcon} from "lucide-react";
 import {cn} from "@/lib/utils";
-import {Button} from "@/components/shadcn/button";
+import {Button} from "@/components/coss-ui/button";
 import {ScrollArea} from "@/components/coss-ui/scroll-area";
 
 const Sheet = SheetPrimitive.Root;

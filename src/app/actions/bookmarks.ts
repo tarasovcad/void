@@ -161,7 +161,7 @@ export async function updateBookmark(
   return {ok: true};
 }
 
-export async function deleteBookmark(bookmarkId: string): Promise<{ok: true}> {
+export async function deleteBookmarks(bookmarkIds: string | string[]): Promise<{ok: true}> {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
@@ -170,12 +170,38 @@ export async function deleteBookmark(bookmarkId: string): Promise<{ok: true}> {
     throw new Error("Unauthorized");
   }
 
+  const ids = Array.isArray(bookmarkIds) ? bookmarkIds : [bookmarkIds];
+
   const supabase = await createClient();
 
   const {error} = await supabase
     .from("bookmarks")
-    .delete()
-    .eq("id", bookmarkId)
+    .update({deleted_at: new Date().toISOString()})
+    .in("id", ids)
+    .eq("user_id", session.user.id);
+
+  if (error) throw error;
+
+  return {ok: true};
+}
+
+export async function archiveBookmarks(bookmarkIds: string | string[]): Promise<{ok: true}> {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+
+  const ids = Array.isArray(bookmarkIds) ? bookmarkIds : [bookmarkIds];
+
+  const supabase = await createClient();
+
+  const {error} = await supabase
+    .from("bookmarks")
+    .update({archived_at: new Date().toISOString()})
+    .in("id", ids)
     .eq("user_id", session.user.id);
 
   if (error) throw error;

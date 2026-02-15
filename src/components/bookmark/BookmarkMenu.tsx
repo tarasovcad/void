@@ -21,9 +21,10 @@ import {Textarea} from "@/components/shadcn/textarea";
 import {useForm} from "react-hook-form";
 import {zodResolver} from "@hookform/resolvers/zod";
 import {z} from "zod";
-import {updateBookmark, UpdateBookmarkData} from "@/app/actions/bookmarks";
+import {updateBookmark, UpdateBookmarkData, archiveBookmarks} from "@/app/actions/bookmarks";
 import {toastManager} from "@/components/coss-ui/toast";
 import {type Bookmark} from "@/components/bookmark/Bookmark";
+import {useMutation, useQueryClient} from "@tanstack/react-query";
 
 // Zod schema for bookmark form validation
 const bookmarkFormSchema = z.object({
@@ -39,11 +40,13 @@ export function BookmarkMenu({
   onOpenChange,
   open,
   onDelete,
+  onArchive,
 }: {
   item?: Bookmark;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   onDelete?: (item: Bookmark) => void;
+  onArchive?: (item: Bookmark) => void;
 }) {
   const data = useMemo(() => {
     return {
@@ -144,6 +147,41 @@ export function BookmarkMenu({
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [selectedPreview, setSelectedPreview] = useState<"og" | "preview">("preview");
 
+  const queryClient = useQueryClient();
+
+  const archiveMutation = useMutation({
+    mutationKey: ["archive-bookmark"],
+    mutationFn: async (id: string) => {
+      return archiveBookmarks(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({queryKey: ["bookmarks"]});
+      onOpenChange(false);
+      toastManager.add({
+        title: "Bookmark archived",
+        type: "success",
+      });
+    },
+    onError: (error) => {
+      console.error("Failed to archive bookmark:", error);
+      toastManager.add({
+        title: "Archive failed",
+        description: error instanceof Error ? error.message : "Failed to archive bookmark",
+        type: "error",
+      });
+    },
+  });
+
+  const handleArchive = () => {
+    if (item) {
+      if (onArchive) {
+        onArchive(item);
+      } else {
+        archiveMutation.mutate(item.id);
+      }
+    }
+  };
+
   // Derive both OG and Preview URLs from whatever is currently saved
   const currentImageUrl = item?.preview_image ?? "";
   const ogImageUrl = currentImageUrl.replace(/\/(preview|og)\.png$/, "/og.png");
@@ -191,7 +229,7 @@ export function BookmarkMenu({
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent side="right" className="max-w-[560px]">
-          <SheetPanel className="p-0">
+          <SheetPanel className="p-0 pt-0!">
             <form onSubmit={form.handleSubmit(onSubmit)}>
               {item?.id ? (
                 <div className="bg-muted relative aspect-video w-full border-b">
@@ -228,7 +266,12 @@ export function BookmarkMenu({
                 </SheetHeader>
 
                 <div className="mt-2 flex gap-2">
-                  <Button variant="outline" size="default">
+                  <Button
+                    variant="outline"
+                    size="default"
+                    type="button"
+                    onClick={handleArchive}
+                    disabled={archiveMutation.isPending}>
                     <svg
                       width="16"
                       height="16"

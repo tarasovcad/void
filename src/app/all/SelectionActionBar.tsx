@@ -12,6 +12,7 @@ export function SelectionActionBar({
   onClearSelection,
   onSelectAll,
   onCopy,
+  onArchive,
   onDelete,
 }: {
   visible: boolean;
@@ -20,6 +21,7 @@ export function SelectionActionBar({
   onClearSelection: () => void;
   onSelectAll: () => void;
   onCopy: () => void;
+  onArchive: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -87,6 +89,26 @@ export function SelectionActionBar({
             />
           </svg>
           Copy
+        </Button>
+        <Button variant="outline" size="sm" onClick={onArchive} className="w-[85px]">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M1.83301 2C1.55687 2 1.33301 2.22386 1.33301 2.5V4.16667C1.33301 4.44281 1.55687 4.66667 1.83301 4.66667H14.1663C14.4425 4.66667 14.6663 4.44281 14.6663 4.16667V2.5C14.6663 2.22386 14.4425 2 14.1663 2H1.83301Z"
+              fill="currentColor"
+            />
+            <path
+              fillRule="evenodd"
+              clipRule="evenodd"
+              d="M14 5.66667H2V10.3214C1.99999 10.8633 1.99999 11.3004 2.02891 11.6543C2.05869 12.0187 2.12159 12.3388 2.27249 12.635C2.51217 13.1054 2.89462 13.4879 3.36503 13.7275C3.66117 13.8784 3.98127 13.9413 4.34569 13.9711C4.69963 14 5.1367 14 5.67859 14H10.3214C10.8633 14 11.3004 14 11.6543 13.9711C12.0187 13.9413 12.3388 13.8784 12.635 13.7275C13.1054 13.4879 13.4879 13.1054 13.7275 12.635C13.8784 12.3388 13.9413 12.0187 13.9711 11.6543C14 11.3004 14 10.8633 14 10.3214V5.66667ZM6.16667 7.83334C6.16667 7.5572 6.39053 7.33334 6.66667 7.33334H9.33333C9.60947 7.33334 9.83333 7.5572 9.83333 7.83334C9.83333 8.10947 9.60947 8.33334 9.33333 8.33334H6.66667C6.39053 8.33334 6.16667 8.10947 6.16667 7.83334Z"
+              fill="currentColor"
+            />
+          </svg>
+          Archive
         </Button>
         <Button variant="favorite" size="sm" disabled className="w-[92px]">
           <svg

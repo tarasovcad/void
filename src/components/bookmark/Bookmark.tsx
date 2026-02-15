@@ -214,7 +214,7 @@ export const ItemRow = ({
 }) => {
   // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
   // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
-  console.log(item);
+
   return (
     <Link
       href={`/all/${item.id}`}
@@ -230,15 +230,18 @@ export const ItemRow = ({
         selectionMode && selectedIds?.has(item.id) && "bg-muted",
         className,
       )}>
-      <BookmarkHoverActions
-        className="top-4 right-4"
-        onOptions={() => {
-          onOpenMenu?.(item);
-        }}
-        onDelete={() => {
-          onDelete?.(item);
-        }}
-      />
+      {!selectionMode && (
+        <BookmarkHoverActions
+          className="top-4 right-4"
+          onOptions={() => {
+            onOpenMenu?.(item);
+          }}
+          onDelete={() => {
+            onDelete?.(item);
+          }}
+        />
+      )}
+
       <div className="flex items-center">
         {/* Animated checkbox slot — always rendered, width animated via grid-cols */}
         <div
