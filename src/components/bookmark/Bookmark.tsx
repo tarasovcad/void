@@ -16,6 +16,10 @@ export type Bookmark = {
   url: string;
   user_id: string;
   preview_image: string;
+  updated_at: string;
+  archived_at: string;
+  deleted_at: string;
+  notes: string;
   // tags: string[];
 };
 
@@ -212,12 +216,9 @@ export const ItemRow = ({
   selectedIds?: Set<string>;
   setSelected?: (id: string, checked: boolean) => void;
 }) => {
-  // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
-  // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
-
   return (
     <Link
-      href={`/all/${item.id}`}
+      href={item.url}
       onClick={(e) => {
         if (!onOpenMenu) return;
         e.preventDefault();
@@ -277,20 +278,15 @@ export const ItemRow = ({
         </div>
       </div>
 
-      <div className="min-w-0 flex-1">
-        <div className="text-foreground truncate text-sm font-semibold">{item.title}</div>
-        <div className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1 text-xs whitespace-nowrap">
+      <div className="min-w-0 flex-1 text-[13px]">
+        <div className="text-foreground truncate text-[15px] font-semibold">{item.title}</div>
+        <div className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1 whitespace-nowrap">
           <span className="min-w-0 truncate">{item.url}</span>
           <span className="shrink-0">-</span>
           <span className="shrink-0">{formatDateAbsolute(item.created_at)}</span>
         </div>
-        {/* {item.tags.length > 0 ? (
-          <div className="text-muted-foreground mt-2 text-xs">
-            {item.tags.map((t) => `#${t}`).join("  ")}
-          </div>
-        ) : null} */}
         {item.description ? (
-          <div className="text-muted-foreground mt-2 line-clamp-2 text-xs">{item.description}</div>
+          <div className="text-muted-foreground mt-2 line-clamp-2">{item.description}</div>
         ) : null}
       </div>
     </Link>

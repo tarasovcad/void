@@ -16,13 +16,17 @@ import {
 } from "@/components/coss-ui/dialog";
 import {Button} from "@/components/coss-ui/button";
 import {Button as ShadcnButton} from "@/components/shadcn/button";
-import {Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator} from "@/components/coss-ui/menu";
 import {Separator} from "@/components/shadcn/separator";
-import {Textarea} from "@/components/shadcn/textarea";
+import {Textarea} from "@/components/coss-ui/textarea";
 import {useForm} from "react-hook-form";
 import {zodResolver} from "@hookform/resolvers/zod";
 import {z} from "zod";
-import {updateBookmark, UpdateBookmarkData, archiveBookmarks} from "@/app/actions/bookmarks";
+import {
+  updateBookmark,
+  UpdateBookmarkData,
+  archiveBookmarks,
+  resetBookmark,
+} from "@/app/actions/bookmarks";
 import {toastManager} from "@/components/coss-ui/toast";
 import {type Bookmark} from "@/components/bookmark/Bookmark";
 import {useMutation, useQueryClient} from "@tanstack/react-query";
@@ -32,6 +36,7 @@ const bookmarkFormSchema = z.object({
   title: z.string().min(1, "Title is required").max(200, "Title must be less than 200 characters"),
   description: z.string().max(1000, "Description must be less than 1000 characters").optional(),
   preview_image: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  notes: z.string().max(1000, "Notes must be less than 1000 characters").optional(),
 });
 
 type BookmarkFormValues = z.infer<typeof bookmarkFormSchema>;
@@ -56,6 +61,7 @@ export function BookmarkMenu({
       source: item?.url,
       type: item?.kind ? item.kind.charAt(0).toUpperCase() + item.kind.slice(1) : undefined,
       saved: formatDateWithTime(item?.created_at ?? ""),
+      updated: formatDateWithTime(item?.updated_at ?? ""),
       preview_image: item?.preview_image,
       tags: ["animation", "design", "videos"],
     };
@@ -68,6 +74,7 @@ export function BookmarkMenu({
       title: item?.title ?? "",
       description: item?.description ?? "",
       preview_image: item?.preview_image ?? "",
+      notes: item?.notes ?? "",
     },
   });
 
@@ -75,6 +82,7 @@ export function BookmarkMenu({
     title: "",
     description: "",
     preview_image: "",
+    notes: "",
   });
 
   const titleElRef = useRef<HTMLHeadingElement | null>(null);
@@ -86,6 +94,7 @@ export function BookmarkMenu({
         title: item.title,
         description: item.description,
         preview_image: item.preview_image,
+        notes: item.notes ?? "",
       };
       form.reset(values);
       originalValues.current = values;
@@ -99,56 +108,85 @@ export function BookmarkMenu({
     return (
       (currentValues.title ?? "") !== (originalValues.current.title ?? "") ||
       (currentValues.description ?? "") !== (originalValues.current.description ?? "") ||
-      (currentValues.preview_image ?? "") !== (originalValues.current.preview_image ?? "")
+      (currentValues.preview_image ?? "") !== (originalValues.current.preview_image ?? "") ||
+      (currentValues.notes ?? "") !== (originalValues.current.notes ?? "")
     );
   }, [currentValues, item]);
 
-  const onSubmit = async (values: BookmarkFormValues) => {
-    if (!item) return;
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [selectedPreview, setSelectedPreview] = useState<"og" | "preview">("preview");
 
-    try {
-      // Only include fields that have actually changed
-      const updates: UpdateBookmarkData = {};
+  const queryClient = useQueryClient();
 
-      if ((values.title ?? "") !== (originalValues.current.title ?? "")) {
-        updates.title = values.title;
-      }
-
-      if ((values.description ?? "") !== (originalValues.current.description ?? "")) {
-        updates.description = values.description;
-      }
-
-      if ((values.preview_image ?? "") !== (originalValues.current.preview_image ?? "")) {
-        updates.preview_image = values.preview_image;
-      }
-
-      if (Object.keys(updates).length > 0) {
-        await updateBookmark(item.id, updates);
-
-        toastManager.add({
-          title: "Bookmark updated",
-          type: "success",
-        });
-      }
-
-      originalValues.current = values;
-      form.reset(values);
+  const updateMutation = useMutation({
+    mutationKey: ["update-bookmark"],
+    mutationFn: async (input: {bookmarkId: string; updates: UpdateBookmarkData}) => {
+      return updateBookmark(input.bookmarkId, input.updates);
+    },
+    onMutate: async () => {
+      // Close immediately, don't wait for response
       onOpenChange(false);
-    } catch (error) {
+
+      // Optimistically lock in the latest form values so close/reset doesn't revert them
+      const prev = originalValues.current;
+      const nextValues = form.getValues();
+      originalValues.current = nextValues;
+      form.reset(nextValues);
+
+      return {prev};
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({queryKey: ["bookmarks"]});
+      toastManager.add({
+        title: "Bookmark updated",
+        type: "success",
+      });
+    },
+    onError: (error, _vars, ctx) => {
       console.error("Failed to update bookmark:", error);
+
+      if (ctx?.prev) {
+        originalValues.current = ctx.prev;
+        form.reset(ctx.prev);
+      }
 
       toastManager.add({
         title: "Update failed",
         description: error instanceof Error ? error.message : "Failed to update bookmark",
         type: "error",
       });
+    },
+  });
+
+  const onSubmit = (values: BookmarkFormValues) => {
+    if (!item) return;
+
+    // Only include fields that have actually changed
+    const updates: UpdateBookmarkData = {};
+
+    if ((values.title ?? "") !== (originalValues.current.title ?? "")) {
+      updates.title = values.title;
     }
+
+    if ((values.description ?? "") !== (originalValues.current.description ?? "")) {
+      updates.description = values.description;
+    }
+
+    if ((values.preview_image ?? "") !== (originalValues.current.preview_image ?? "")) {
+      updates.preview_image = values.preview_image;
+    }
+
+    if ((values.notes ?? "") !== (originalValues.current.notes ?? "")) {
+      updates.notes = values.notes ?? "";
+    }
+
+    if (Object.keys(updates).length === 0) {
+      onOpenChange(false);
+      return;
+    }
+
+    updateMutation.mutate({bookmarkId: item.id, updates});
   };
-
-  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
-  const [selectedPreview, setSelectedPreview] = useState<"og" | "preview">("preview");
-
-  const queryClient = useQueryClient();
 
   const archiveMutation = useMutation({
     mutationKey: ["archive-bookmark"],
@@ -172,6 +210,35 @@ export function BookmarkMenu({
       });
     },
   });
+
+  const resetMutation = useMutation({
+    mutationKey: ["reset-bookmark"],
+    mutationFn: async (id: string) => {
+      return resetBookmark(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({queryKey: ["bookmarks"]});
+      toastManager.add({
+        title: "Bookmark reset",
+        description: "Metadata and images are being refreshed.",
+        type: "success",
+      });
+    },
+    onError: (error) => {
+      console.error("Failed to reset bookmark:", error);
+      toastManager.add({
+        title: "Reset failed",
+        description: error instanceof Error ? error.message : "Failed to reset bookmark",
+        type: "error",
+      });
+    },
+  });
+
+  const handleReset = () => {
+    if (item) {
+      resetMutation.mutate(item.id);
+    }
+  };
 
   const handleArchive = () => {
     if (item) {
@@ -317,87 +384,30 @@ export function BookmarkMenu({
                     Preview
                   </Button>
 
-                  <Menu>
-                    <MenuTrigger
-                      render={
-                        <Button variant="outline" size="default" type="button">
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 16 16"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg">
-                            <path
-                              d="M4.23019 11.3333C5.1574 12.3555 6.51774 13 8.00033 13C10.7617 13 13.0003 10.7614 13.0003 8C13.0003 7.78793 12.9871 7.57913 12.9616 7.3744C12.9275 7.10033 13.1219 6.85053 13.3959 6.81633C13.6699 6.7822 13.9198 6.9766 13.9539 7.2506C13.9846 7.49633 14.0003 7.74647 14.0003 8C14.0003 11.3137 11.3141 14 8.00033 14C6.31973 14 4.77059 13.3084 3.66699 12.1925V13.5C3.66699 13.7761 3.44313 14 3.16699 14C2.89085 14 2.66699 13.7761 2.66699 13.5V11.5C2.66699 10.8557 3.18933 10.3333 3.83366 10.3333H5.83366C6.1098 10.3333 6.33366 10.5572 6.33366 10.8333C6.33366 11.1095 6.1098 11.3333 5.83366 11.3333H4.23019Z"
-                              fill="currentColor"
-                            />
-                            <path
-                              d="M3.03871 8.6256C3.07288 8.89967 2.87844 9.14947 2.60442 9.18367C2.3304 9.2178 2.08057 9.0234 2.04639 8.7494C2.01576 8.50367 2 8.25353 2 8C2 4.68629 4.68629 2 8 2C9.6846 2 11.2371 2.69492 12.3412 3.81548V2.5C12.3412 2.22386 12.5651 2 12.8412 2C13.1174 2 13.3412 2.22386 13.3412 2.5V4.5C13.3412 5.14433 12.8189 5.66667 12.1745 5.66667H10.1745C9.8984 5.66667 9.67453 5.44281 9.67453 5.16667C9.67453 4.89053 9.8984 4.66667 10.1745 4.66667H11.7701C10.8429 3.64454 9.4826 3 8 3C5.23857 3 3 5.23857 3 8C3 8.21207 3.01318 8.42087 3.03871 8.6256Z"
-                              fill="currentColor"
-                            />
-                          </svg>
-                          Reset
-                        </Button>
-                      }
-                    />
-                    <MenuPopup side="bottom" align="start" sideOffset={6}>
-                      <MenuItem onClick={() => {}}>
-                        <svg
-                          width="16"
-                          height="16"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg">
-                          <path
-                            d="M4.23019 11.3333C5.1574 12.3555 6.51774 13 8.00033 13C10.7617 13 13.0003 10.7614 13.0003 8C13.0003 7.78793 12.9871 7.57913 12.9616 7.3744C12.9275 7.10033 13.1219 6.85053 13.3959 6.81633C13.6699 6.7822 13.9198 6.9766 13.9539 7.2506C13.9846 7.49633 14.0003 7.74647 14.0003 8C14.0003 11.3137 11.3141 14 8.00033 14C6.31973 14 4.77059 13.3084 3.66699 12.1925V13.5C3.66699 13.7761 3.44313 14 3.16699 14C2.89085 14 2.66699 13.7761 2.66699 13.5V11.5C2.66699 10.8557 3.18933 10.3333 3.83366 10.3333H5.83366C6.1098 10.3333 6.33366 10.5572 6.33366 10.8333C6.33366 11.1095 6.1098 11.3333 5.83366 11.3333H4.23019Z"
-                            fill="currentColor"
-                          />
-                          <path
-                            d="M3.03871 8.6256C3.07288 8.89967 2.87844 9.14947 2.60442 9.18367C2.3304 9.2178 2.08057 9.0234 2.04639 8.7494C2.01576 8.50367 2 8.25353 2 8C2 4.68629 4.68629 2 8 2C9.6846 2 11.2371 2.69492 12.3412 3.81548V2.5C12.3412 2.22386 12.5651 2 12.8412 2C13.1174 2 13.3412 2.22386 13.3412 2.5V4.5C13.3412 5.14433 12.8189 5.66667 12.1745 5.66667H10.1745C9.8984 5.66667 9.67453 5.44281 9.67453 5.16667C9.67453 4.89053 9.8984 4.66667 10.1745 4.66667H11.7701C10.8429 3.64454 9.4826 3 8 3C5.23857 3 3 5.23857 3 8C3 8.21207 3.01318 8.42087 3.03871 8.6256Z"
-                            fill="currentColor"
-                          />
-                        </svg>
-                        Refetch data
-                      </MenuItem>
-                      <MenuSeparator />
-                      <MenuItem onClick={() => {}}>
-                        <svg
-                          width="16"
-                          height="16"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg">
-                          <path
-                            d="M8.66667 14C9.03487 14 9.33333 13.7015 9.33333 13.3333C9.33333 12.9651 9.03487 12.6667 8.66667 12.6667C8.29847 12.6667 8 12.9651 8 13.3333C8 13.7015 8.29847 14 8.66667 14Z"
-                            fill="currentColor"
-                          />
-                          <path
-                            d="M14.0003 7.33333C14.0003 6.96513 13.7019 6.66666 13.3337 6.66666C12.9655 6.66666 12.667 6.96513 12.667 7.33333C12.667 7.70153 12.9655 8 13.3337 8C13.7019 8 14.0003 7.70153 14.0003 7.33333Z"
-                            fill="currentColor"
-                          />
-                          <path
-                            d="M13.2863 9.51193C13.6051 9.69607 13.7143 10.1038 13.5303 10.4227C13.3461 10.7415 12.9385 10.8507 12.6196 10.6667C12.3007 10.4825 12.1915 10.0749 12.3755 9.756C12.5597 9.43713 12.9674 9.32787 13.2863 9.51193Z"
-                            fill="currentColor"
-                          />
-                          <path
-                            d="M11.5782 12.8628C11.8971 12.6787 12.0064 12.271 11.8222 11.9521C11.6382 11.6333 11.2304 11.524 10.9116 11.7081C10.5927 11.8922 10.4834 12.2999 10.6676 12.6188C10.8516 12.9377 11.2594 13.0469 11.5782 12.8628Z"
-                            fill="currentColor"
-                          />
-                          <path
-                            d="M12.6182 5.33332C12.2994 5.51741 11.8917 5.40817 11.7076 5.08931C11.5235 4.77044 11.6328 4.36271 11.9516 4.17862C12.2704 3.99453 12.6782 4.10377 12.8623 4.42264C13.0464 4.7415 12.9371 5.14923 12.6182 5.33332Z"
-                            fill="currentColor"
-                          />
-                          <path
-                            fillRule="evenodd"
-                            clipRule="evenodd"
-                            d="M8 3C5.23857 3 3 5.23857 3 8C3 9.91807 4.08015 11.5848 5.66667 12.4235V9.83333C5.66667 9.5572 5.89053 9.33333 6.16667 9.33333C6.44281 9.33333 6.66667 9.5572 6.66667 9.83333V13.5C6.66667 13.7761 6.44281 14 6.16667 14H2.5C2.22386 14 2 13.7761 2 13.5C2 13.2239 2.22386 13 2.5 13H4.68241C3.06602 11.9254 2 10.0876 2 8C2 4.68629 4.68629 2 8 2C8.83813 2 9.6374 2.17215 10.3633 2.48349C10.6171 2.59235 10.7345 2.88632 10.6257 3.14011C10.5169 3.39389 10.2229 3.51138 9.96907 3.40253C9.36547 3.14362 8.70013 3 8 3Z"
-                            fill="currentColor"
-                          />
-                        </svg>
-                        Refetch with delay (10s)
-                      </MenuItem>
-                    </MenuPopup>
-                  </Menu>
+                  <Button
+                    variant="outline"
+                    size="default"
+                    type="button"
+                    onClick={handleReset}
+                    disabled={resetMutation.isPending}>
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className={cn(resetMutation.isPending && "animate-spin")}>
+                      <path
+                        d="M4.23019 11.3333C5.1574 12.3555 6.51774 13 8.00033 13C10.7617 13 13.0003 10.7614 13.0003 8C13.0003 7.78793 12.9871 7.57913 12.9616 7.3744C12.9275 7.10033 13.1219 6.85053 13.3959 6.81633C13.6699 6.7822 13.9198 6.9766 13.9539 7.2506C13.9846 7.49633 14.0003 7.74647 14.0003 8C14.0003 11.3137 11.3141 14 8.00033 14C6.31973 14 4.77059 13.3084 3.66699 12.1925V13.5C3.66699 13.7761 3.44313 14 3.16699 14C2.89085 14 2.66699 13.7761 2.66699 13.5V11.5C2.66699 10.8557 3.18933 10.3333 3.83366 10.3333H5.83366C6.1098 10.3333 6.33366 10.5572 6.33366 10.8333C6.33366 11.1095 6.1098 11.3333 5.83366 11.3333H4.23019Z"
+                        fill="currentColor"
+                      />
+                      <path
+                        d="M3.03871 8.6256C3.07288 8.89967 2.87844 9.14947 2.60442 9.18367C2.3304 9.2178 2.08057 9.0234 2.04639 8.7494C2.01576 8.50367 2 8.25353 2 8C2 4.68629 4.68629 2 8 2C9.6846 2 11.2371 2.69492 12.3412 3.81548V2.5C12.3412 2.22386 12.5651 2 12.8412 2C13.1174 2 13.3412 2.22386 13.3412 2.5V4.5C13.3412 5.14433 12.8189 5.66667 12.1745 5.66667H10.1745C9.8984 5.66667 9.67453 5.44281 9.67453 5.16667C9.67453 4.89053 9.8984 4.66667 10.1745 4.66667H11.7701C10.8429 3.64454 9.4826 3 8 3C5.23857 3 3 5.23857 3 8C3 8.21207 3.01318 8.42087 3.03871 8.6256Z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                    Reset
+                  </Button>
                   <Button variant="favorite" size="default" disabled>
                     <svg
                       width="16"
@@ -456,17 +466,17 @@ export function BookmarkMenu({
                     const newDescription = e.currentTarget.textContent ?? "";
                     form.setValue("description", newDescription, {shouldDirty: true});
                   }}
-                  className="text-muted-foreground text-sm focus:ring-0 focus:ring-offset-0 focus:outline-none">
+                  className="text-muted-foreground text-[15px] focus:ring-0 focus:ring-offset-0 focus:outline-none">
                   {item?.description}
                 </div>
               </div>
 
               <Separator />
 
-              <div className="p-6">
-                <div className="text-sm font-semibold">Details</div>
+              <div className="p-6 text-[15px]">
+                <div className="font-semibold">Details</div>
 
-                <div className="mt-4 grid grid-cols-[120px_1fr] gap-y-3 text-sm">
+                <div className="mt-4 grid grid-cols-[120px_1fr] gap-y-3">
                   <div className="text-muted-foreground">Source</div>
                   <button
                     type="button"
@@ -507,12 +517,17 @@ export function BookmarkMenu({
                   <div className="text-muted-foreground">Saved</div>
                   <div>{data.saved}</div>
 
+                  {item?.updated_at !== item?.created_at && (
+                    <>
+                      <div className="text-muted-foreground">Updated</div>
+                      <div>{data.updated}</div>
+                    </>
+                  )}
+
                   <div className="text-muted-foreground">Tags</div>
                   <div className="flex flex-wrap gap-x-2 gap-y-1">
                     {data.tags.map((t) => (
-                      <span key={t} className="text-foreground/90">
-                        #{t}
-                      </span>
+                      <span key={t}>#{t}</span>
                     ))}
                   </div>
                 </div>
@@ -520,22 +535,26 @@ export function BookmarkMenu({
 
               <Separator />
 
-              <div className="p-6">
-                <div className="text-sm font-semibold">Notes</div>
+              <div className="p-6 text-[15px]">
+                <div className="font-semibold">Notes</div>
                 <div className="mt-3">
-                  <Textarea placeholder="Click to add personal notes..." />
+                  <Textarea
+                    placeholder="Write personal notes..."
+                    value={currentValues.notes ?? ""}
+                    onChange={(e) => form.setValue("notes", e.target.value, {shouldDirty: true})}
+                    className="sm:text-[15px]"
+                  />
                 </div>
               </div>
-              <Button
-                variant="default"
-                disabled={!hasChanges}
-                className={cn(
-                  "absolute right-6 bottom-6 transition-opacity duration-150",
-                  hasChanges ? "opacity-100!" : "opacity-0!",
-                )}
-                type="submit">
-                Submit
-              </Button>
+              {hasChanges ? (
+                <div className="px-6 pb-6">
+                  <div className="flex justify-end">
+                    <Button variant="default" type="submit">
+                      Submit
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </form>
           </SheetPanel>
         </SheetContent>

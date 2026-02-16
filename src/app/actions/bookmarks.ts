@@ -153,6 +153,7 @@ export type UpdateBookmarkData = {
   title?: string;
   description?: string;
   preview_image?: string;
+  notes?: string;
 };
 
 export async function updateBookmark(
@@ -172,6 +173,7 @@ export async function updateBookmark(
   if (updates.title !== undefined) updateData.title = updates.title;
   if (updates.description !== undefined) updateData.description = updates.description;
   if (updates.preview_image !== undefined) updateData.preview_image = updates.preview_image;
+  if (updates.notes !== undefined) updateData.notes = updates.notes;
 
   // If no fields to update, return early
   if (Object.keys(updateData).length === 0) {
@@ -182,7 +184,7 @@ export async function updateBookmark(
 
   const {error} = await supabase
     .from("bookmarks")
-    .update(updateData)
+    .update({...updateData, updated_at: new Date().toISOString()})
     .eq("id", bookmarkId)
     .eq("user_id", session.user.id);
 
@@ -230,11 +232,70 @@ export async function archiveBookmarks(bookmarkIds: string | string[]): Promise<
 
   const {error} = await supabase
     .from("bookmarks")
-    .update({archived_at: new Date().toISOString()})
+    .update({archived_at: new Date().toISOString(), updated_at: new Date().toISOString()})
     .in("id", ids)
     .eq("user_id", session.user.id);
 
   if (error) throw error;
+
+  return {ok: true};
+}
+
+export async function resetBookmark(bookmarkId: string): Promise<{ok: true}> {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+
+  const supabase = await createClient();
+
+  // Look up the bookmark to get its URL
+  const {data: bookmark, error: fetchError} = await supabase
+    .from("bookmarks")
+    .select("id, url")
+    .eq("id", bookmarkId)
+    .eq("user_id", session.user.id)
+    .single();
+
+  if (fetchError || !bookmark) {
+    throw new Error("Bookmark not found");
+  }
+
+  // Re-fetch metadata (title, description) from the original URL
+  const normalized = normalizeInputUrl(bookmark.url);
+  const metadata = await fetchUrlMetadata(normalized, bookmark.url);
+
+  // Update the bookmark row with fresh metadata
+  const {error: updateError} = await supabase
+    .from("bookmarks")
+    .update({
+      title: metadata.title ?? null,
+      description: metadata.description ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", bookmarkId)
+    .eq("user_id", session.user.id);
+
+  if (updateError) throw updateError;
+
+  // Queue a QStash job to re-fetch favicon, OG image, and screenshot
+  const receiverUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/enrich-bookmark`;
+
+  await qstash.publishJSON({
+    url: receiverUrl,
+    body: {
+      url: normalized.toString(),
+      id: bookmark.id,
+    },
+    headers: {
+      "x-job-type": "enrich-bookmark",
+      "x-version": "v1",
+    },
+    timeout: 30,
+  });
 
   return {ok: true};
 }

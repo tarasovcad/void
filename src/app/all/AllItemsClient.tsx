@@ -79,7 +79,7 @@ export default function AllItemsClient({
 
   // ── Context menu state ──
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuItem, setMenuItem] = useState<Bookmark | undefined>(undefined);
+  const [menuItemId, setMenuItemId] = useState<string | undefined>(undefined);
 
   // ── Delete dialog state ──
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -218,6 +218,12 @@ export default function AllItemsClient({
   const allBookmarks = React.useMemo(() => {
     return bookmarksQuery.data?.pages.flatMap((p) => p.items) ?? [];
   }, [bookmarksQuery.data]);
+
+  // Derive the live menu item from query data so it stays fresh after resets
+  const menuItem = React.useMemo(() => {
+    if (!menuItemId) return undefined;
+    return allBookmarks.find((b) => b.id === menuItemId);
+  }, [allBookmarks, menuItemId]);
 
   // Match the newly-added bookmark from the fetched list for the crossfade
   const resolvedBookmark =
@@ -420,7 +426,7 @@ export default function AllItemsClient({
   }, [allBookmarks, selectedIds]);
 
   const openMenu = React.useCallback((item: Bookmark) => {
-    setMenuItem(item);
+    setMenuItemId(item.id);
     setMenuOpen(true);
   }, []);
 
@@ -484,7 +490,7 @@ export default function AllItemsClient({
       />
 
       {/* Item count */}
-      <div className="text-muted-foreground flex items-center gap-1 px-6 py-3 text-xs">
+      <div className="text-muted-foreground flex items-center gap-1 px-6 py-3 text-sm">
         <NumberFlow value={currentTotalCount} /> items
       </div>
       {/* Scrollable content area */}
