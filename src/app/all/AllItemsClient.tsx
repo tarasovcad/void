@@ -1,6 +1,5 @@
 "use client";
 import * as React from "react";
-import {Checkbox} from "@/components/coss-ui/checkbox";
 import {ScrollArea} from "@/components/coss-ui/scroll-area";
 import {cn} from "@/lib/utils";
 import {useEffect, useState} from "react";
@@ -531,24 +530,15 @@ export default function AllItemsClient({
                         e.stopPropagation();
                         toggleSelected(item.id);
                       }}>
-                      <div
-                        className={cn(
-                          "bg-background/80 ring-border absolute top-2 left-2 z-20 rounded-md p-1 ring-1 backdrop-blur transition-all duration-200 ease-out",
-                          selectionMode
-                            ? "scale-100 opacity-100"
-                            : "pointer-events-none scale-90 opacity-0",
-                        )}
-                        style={{
-                          transitionDelay: selectionMode ? `${Math.min(index * 15, 120)}ms` : "0ms",
-                        }}>
-                        <Checkbox
-                          checked={selectedIds.has(item.id)}
-                          onCheckedChange={(next) => setSelected(item.id, next === true)}
-                          onClick={(e) => e.stopPropagation()}
-                          aria-label={`Select ${item.title}`}
-                        />
-                      </div>
-                      <GridCard item={item} onOpenMenu={openMenu} onDelete={openDeleteDialog} />
+                      <GridCard
+                        item={item}
+                        onOpenMenu={openMenu}
+                        onDelete={openDeleteDialog}
+                        selectionMode={selectionMode}
+                        selectionIndex={index}
+                        selectedIds={selectedIds}
+                        setSelected={setSelected}
+                      />
                     </div>
                   </AnimatedItem>
                 ))

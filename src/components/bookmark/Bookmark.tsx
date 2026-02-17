@@ -219,11 +219,7 @@ export const ItemRow = ({
   return (
     <Link
       href={item.url}
-      onClick={(e) => {
-        if (!onOpenMenu) return;
-        e.preventDefault();
-        onOpenMenu(item);
-      }}
+      target="_blank"
       className={cn(
         "group relative flex w-full cursor-pointer gap-5 border-b px-6 py-5 pr-16 text-left",
         "hover:bg-muted/80",
@@ -297,57 +293,74 @@ export const GridCard = ({
   item,
   onOpenMenu,
   onDelete,
+  selectionMode,
+  selectionIndex = 0,
+  selectedIds,
+  setSelected,
 }: {
   item: Bookmark;
   onOpenMenu?: (item: Bookmark) => void;
   onDelete?: (item: Bookmark) => void;
+  selectionMode?: boolean;
+  selectionIndex?: number;
+  selectedIds?: Set<string>;
+  setSelected?: (id: string, checked: boolean) => void;
 }) => {
-  // const meta = [item.domain, item.dateLabel].filter(Boolean).join(" – ");
-
   return (
     <Link
       href={item.url}
-      onClick={(e) => {
-        if (!onOpenMenu) return;
-        e.preventDefault();
-        onOpenMenu(item);
-      }}
-      className={[
-        "group bg-background relative block w-full overflow-hidden rounded-md border text-left",
-        "hover:bg-muted/30 focus-visible:bg-muted/30",
-        "focus-visible:ring-ring/50 hover:border-foreground/30 outline-none focus-visible:ring-2",
-      ].join(" ")}>
+      className={cn(
+        "group bg-background relative block w-full cursor-pointer overflow-hidden rounded-md border text-left",
+        "hover:bg-muted/80",
+        "focus-visible:bg-muted! outline-none",
+        selectionMode && selectedIds?.has(item.id) && "bg-muted",
+      )}>
       <div className="bg-muted relative aspect-16/10 w-full">
-        <BookmarkHoverActions
-          onOptions={() => {
-            onOpenMenu?.(item);
-          }}
-          onDelete={() => {
-            onDelete?.(item);
-          }}
-        />
+        {!selectionMode && (
+          <BookmarkHoverActions
+            onOptions={() => {
+              onOpenMenu?.(item);
+            }}
+            onDelete={() => {
+              onDelete?.(item);
+            }}
+          />
+        )}
+
+        <div
+          className={cn(
+            "absolute top-2 left-2 z-20",
+            selectionMode ? "scale-100 opacity-100" : "pointer-events-none scale-90 opacity-0",
+          )}
+          style={{
+            transitionDelay: selectionMode ? `${Math.min(selectionIndex * 15, 120)}ms` : "0ms",
+          }}>
+          <Checkbox
+            checked={selectedIds?.has(item.id)}
+            onCheckedChange={(next) => setSelected?.(item.id, next === true)}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Select ${item.title}`}
+          />
+        </div>
 
         <BookmarkImage
           bookmark_id={item.id}
           item={item}
           type="preview"
           fill={true}
-          imageClassName="rounded-md object-cover p-2"
+          imageClassName="rounded-md object-cover rounded-b-none overflow-hidden"
         />
       </div>
 
-      <div className="p-4">
-        <div className="text-foreground line-clamp-1 text-sm font-semibold">{item.title}</div>
-        <div className="text-muted-foreground mt-1 flex min-w-0 items-center gap-1 text-xs whitespace-nowrap">
+      <div className="p-4 pt-3">
+        <div className="text-foreground line-clamp-1 text-sm text-[15px] font-semibold">
+          {item.title}
+        </div>
+        <div className="text-muted-foreground mt-1 flex min-w-0 items-center gap-1 text-[13px] whitespace-nowrap">
           <span className="min-w-0 truncate">{item.url}</span>
           <span className="shrink-0">-</span>
           <span className="shrink-0">{formatDateAbsolute(item.created_at)}</span>
         </div>
-        {/* {item.tags.length > 0 ? (
-          <div className="text-muted-foreground mt-3 text-xs">
-            {item.tags.map((t) => `#${t}`).join("  ")}
-          </div>
-        ) : null} */}
       </div>
     </Link>
   );
