@@ -87,7 +87,10 @@ export async function fetchUrlMetadata(
   return result;
 }
 
-export async function addBookmark(input: {url: string}): Promise<AddBookmarkResult> {
+export async function addBookmark(input: {
+  url: string;
+  tags?: string[];
+}): Promise<AddBookmarkResult> {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
@@ -129,6 +132,19 @@ export async function addBookmark(input: {url: string}): Promise<AddBookmarkResu
     .single();
 
   if (error) throw error;
+
+  // attach tags (bookmark creation should still succeed if tagging fails)
+  const tagNames = (input.tags ?? []).filter(Boolean);
+  if (tagNames.length > 0) {
+    const {error: tagsError} = await supabase.rpc("attach_tags_to_bookmark", {
+      p_bookmark_id: data.id,
+      p_user_id: session.user.id,
+      p_tag_names: tagNames,
+    });
+    if (tagsError) {
+      console.error("Failed to attach tags to bookmark:", tagsError);
+    }
+  }
 
   const receiverUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/enrich-bookmark`;
 
