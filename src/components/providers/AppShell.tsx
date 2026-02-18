@@ -1,6 +1,6 @@
 "use client";
 
-import React, {useState} from "react";
+import React from "react";
 import {Button, buttonVariants} from "../shadcn/button";
 import Image from "next/image";
 import ThemeSwitch from "../other/ThemeSwitch";
@@ -10,21 +10,10 @@ import Link from "next/link";
 import {InputGroup, InputGroupAddon, InputGroupInput} from "@/components/coss-ui/input-group";
 import type {Session} from "better-auth";
 import {Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger} from "@/components/coss-ui/menu";
-import {useMutation, useQueryClient} from "@tanstack/react-query";
+import {useMutation} from "@tanstack/react-query";
 import {authClient} from "@/components/utils/better-auth/auth-client";
 import {toastManager} from "@/components/coss-ui/toast";
-import {addBookmark, type AddBookmarkResult} from "@/app/actions/bookmarks";
-import {z} from "zod";
-import {
-  Dialog,
-  DialogClose,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "@/components/coss-ui/dialog";
-import {Input} from "@/components/coss-ui/input";
+import {AddItemDialog} from "./AddItemDialog";
 
 type AppShellSession = {
   session: Session;
@@ -32,20 +21,6 @@ type AppShellSession = {
     email?: string | null;
   } | null;
 } | null;
-
-const addItemUrlSchema = z
-  .string()
-  .trim()
-  .min(1, "URL is required")
-  .url("Please enter a valid URL")
-  .refine((s) => {
-    try {
-      const u = new URL(s);
-      return u.protocol === "http:" || u.protocol === "https:";
-    } catch {
-      return false;
-    }
-  }, "URL must start with http:// or https://");
 
 function Header({session}: {session: AppShellSession}) {
   const email = session?.user?.email ?? null;
@@ -383,48 +358,6 @@ const Sidebar = () => {
 };
 
 const AppShell = ({children, session}: {children: React.ReactNode; session: AppShellSession}) => {
-  const [addItemOpen, setAddItemOpen] = useState(false);
-  const [addItemUrl, setAddItemUrl] = useState("");
-  const [addItemUrlError, setAddItemUrlError] = useState<string | null>(null);
-  const queryClient = useQueryClient();
-
-  const addItemMutation = useMutation<AddBookmarkResult, Error, {url: string}>({
-    mutationKey: ["add-bookmark"],
-    mutationFn: async (input) => {
-      return await addBookmark(input);
-    },
-    onSuccess: (res) => {
-      toastManager.add({
-        title: "Bookmark added",
-        description: res.url,
-        type: "success",
-      });
-      queryClient.invalidateQueries({queryKey: ["bookmarks"]});
-    },
-    onError: (err) => {
-      toastManager.add({
-        title: "Submit failed",
-        description:
-          (err instanceof Error ? err.message : "Unknown error")
-            .replace(/<[^>]+>/g, " ")
-            .replace(/\s+/g, " ")
-            .trim()
-            .slice(0, 160) || "Unknown error",
-        type: "error",
-      });
-    },
-  });
-
-  const validateAddItemUrl = (rawUrl: string) => {
-    const parsed = addItemUrlSchema.safeParse(rawUrl);
-    if (!parsed.success) {
-      setAddItemUrlError(parsed.error.issues[0]?.message ?? "Invalid URL");
-      return null;
-    }
-    setAddItemUrlError(null);
-    return parsed.data;
-  };
-
   return (
     <main className="flex h-dvh min-h-screen flex-col">
       <Header session={session} />
@@ -432,96 +365,7 @@ const AppShell = ({children, session}: {children: React.ReactNode; session: AppS
         <Sidebar />
         <div className="min-h-0 flex-1">{children}</div>
       </div>
-      <div className="absolute right-6 bottom-6">
-        <Dialog
-          open={addItemOpen}
-          onOpenChange={(open) => {
-            setAddItemOpen(open);
-            if (!open) {
-              // Keep the URL, but clear validation UI when closing the dialog.
-              setTimeout(() => {
-                setAddItemUrlError(null);
-              }, 1000);
-            }
-          }}>
-          <Button
-            variant="default"
-            size="icon-lg"
-            className="size-12 rounded-full"
-            onClick={() => setAddItemOpen(true)}>
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 20 20"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg">
-              <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M10 1C10.4142 1 10.75 1.33579 10.75 1.75V9.25H18.25C18.6642 9.25 19 9.5858 19 10C19 10.4142 18.6642 10.75 18.25 10.75H10.75V18.25C10.75 18.6642 10.4142 19 10 19C9.5858 19 9.25 18.6642 9.25 18.25V10.75H1.75C1.33579 10.75 1 10.4142 1 10C1 9.5858 1.33579 9.25 1.75 9.25H9.25V1.75C9.25 1.33579 9.5858 1 10 1Z"
-                fill="currentColor"
-              />
-            </svg>
-          </Button>
-
-          <DialogPopup className="duration-250 ease-in-out data-ending-style:translate-y-2 data-ending-style:scale-98 data-ending-style:opacity-0 data-starting-style:translate-y-2 data-starting-style:scale-98 data-starting-style:opacity-0">
-            <DialogHeader>
-              <DialogTitle>Add item</DialogTitle>
-            </DialogHeader>
-
-            <DialogPanel>
-              <form
-                className="flex flex-col gap-4"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const url = validateAddItemUrl(addItemUrl);
-                  if (!url) return;
-                  setAddItemOpen(false);
-                  setAddItemUrl("");
-                  setAddItemUrlError(null);
-                  addItemMutation.mutate({url});
-                }}>
-                <div className="flex flex-col gap-2">
-                  <div className="text-sm font-medium">URL</div>
-                  <Input
-                    type="url"
-                    placeholder="https://example.com"
-                    value={addItemUrl}
-                    aria-invalid={!!addItemUrlError}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setAddItemUrl(next);
-                      if (addItemUrlError) validateAddItemUrl(next);
-                    }}
-                  />
-                  {addItemUrlError ? (
-                    <div className="text-destructive text-sm" role="alert">
-                      {addItemUrlError}
-                    </div>
-                  ) : null}
-                </div>
-              </form>
-            </DialogPanel>
-
-            <DialogFooter>
-              <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-              <Button
-                type="button"
-                disabled={addItemMutation.isPending}
-                onClick={() => {
-                  const url = validateAddItemUrl(addItemUrl);
-                  if (!url) return;
-                  setAddItemOpen(false);
-                  setAddItemUrl("");
-                  setAddItemUrlError(null);
-                  addItemMutation.mutate({url});
-                }}>
-                Submit
-              </Button>
-            </DialogFooter>
-          </DialogPopup>
-        </Dialog>
-      </div>
+      <AddItemDialog />
     </main>
   );
 };
