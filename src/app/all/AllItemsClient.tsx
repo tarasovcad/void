@@ -22,6 +22,13 @@ import {NewBookmarkRow, NewBookmarkGridCard} from "./NewBookmarkPlaceholder";
 import {DeleteBookmarkDialog} from "./DeleteBookmarkDialog";
 import {SelectionActionBar} from "./SelectionActionBar";
 import {archiveBookmarks} from "@/app/actions/bookmarks";
+import {tagNamesFromJoin, type BookmarkTagJoinRow} from "@/lib/bookmark-tags";
+import {useSearchParams} from "next/navigation";
+
+function normalizeTagParam(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
 
 function LoadingSpinner({className}: {className?: string}) {
   return (
@@ -42,6 +49,9 @@ export default function AllItemsClient({
   totalCount: number;
   PAGE_SIZE: number;
 }) {
+  const searchParams = useSearchParams();
+  const tagFilter = normalizeTagParam(searchParams.get("tag") ?? searchParams.get("tab"));
+
   // ── View & filter state ──
   const [view, setView] = useState<ViewMode>("list");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -164,7 +174,7 @@ export default function AllItemsClient({
 
   // ── Bookmarks query (paginated) ──
   const bookmarksQuery = useInfiniteQuery({
-    queryKey: ["bookmarks", "all-items", userId, PAGE_SIZE, sort],
+    queryKey: ["bookmarks", "all-items", userId, PAGE_SIZE, sort, tagFilter],
     enabled: !!userId,
     initialPageParam: 0,
     queryFn: async ({pageParam}) => {
@@ -174,12 +184,21 @@ export default function AllItemsClient({
         return {items: [] as Bookmark[], nextOffset: undefined as number | undefined};
       }
 
+      // When filtering by tag we use an inner join so only matching bookmarks are returned.
+      const bookmarksSelect = tagFilter
+        ? "*, bookmark_tags!inner(tags!inner(name))"
+        : "*, bookmark_tags(tags(name))";
+
       let q = supabase
         .from("bookmarks")
-        .select("*")
+        .select(bookmarksSelect)
         .eq("user_id", userId)
         .is("archived_at", null)
         .is("deleted_at", null);
+
+      if (tagFilter) {
+        q = q.eq("bookmark_tags.tags.name", tagFilter);
+      }
 
       // Apply sort order
       if (sort === "oldest") {
@@ -193,7 +212,14 @@ export default function AllItemsClient({
       const {data, error} = await q.range(offset, offset + PAGE_SIZE - 1);
       if (error) throw error;
 
-      const items = (data ?? []) as Bookmark[];
+      type BookmarkRowWithJoins = Bookmark & {bookmark_tags?: BookmarkTagJoinRow[] | null};
+
+      const items: Bookmark[] = ((data ?? []) as BookmarkRowWithJoins[]).map(
+        ({bookmark_tags, ...bookmark}) => ({
+          ...(bookmark as Bookmark),
+          tags: tagNamesFromJoin(bookmark_tags),
+        }),
+      );
       const nextOffset = items.length < PAGE_SIZE ? undefined : offset + PAGE_SIZE;
       return {items, nextOffset};
     },

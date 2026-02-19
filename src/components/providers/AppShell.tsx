@@ -5,7 +5,7 @@ import {Button, buttonVariants} from "../shadcn/button";
 import Image from "next/image";
 import ThemeSwitch from "../other/ThemeSwitch";
 import {cn} from "@/lib/utils";
-import {usePathname, useRouter} from "next/navigation";
+import {usePathname, useRouter, useSearchParams} from "next/navigation";
 import Link from "next/link";
 import {InputGroup, InputGroupAddon, InputGroupInput} from "@/components/coss-ui/input-group";
 import type {Session} from "better-auth";
@@ -250,31 +250,34 @@ const COLLECTIONS = [
   },
 ] as const;
 
-const TAGS = [
-  {id: "design", label: "design", count: 156, href: "/tags/design"},
-  {id: "react", label: "react", count: 89, href: "/tags/react"},
-  {id: "animation", label: "animation", count: 67, href: "/tags/animation"},
-  {id: "ui", label: "ui", count: 134, href: "/tags/ui"},
-  {id: "components", label: "components", count: 45, href: "/tags/components"},
-] as const;
-
-const Sidebar = () => {
+const Sidebar = ({tags}: {tags?: {id: string; name: string; count: number}[]}) => {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeTag =
+    searchParams.get("tag")?.trim().replace(/\s+/g, " ").toLowerCase() ??
+    searchParams.get("tab")?.trim().replace(/\s+/g, " ").toLowerCase() ??
+    null;
 
   return (
     <aside className="h-full w-[224px] shrink-0 border-r">
       <div className="flex h-full flex-col justify-between overflow-y-auto">
         <div className="flex flex-col p-3">
           <div className="flex flex-col gap-0.5">
-            {NAV_ITEMS.map((item) => (
-              <NavItem
-                key={item.label}
-                href={item.href}
-                isActive={item.href === pathname}
-                icon={item.icon}
-                label={item.label}
-              />
-            ))}
+            {NAV_ITEMS.map((item) => {
+              const isAllItemsWithFilter =
+                item.href === "/all" && pathname === "/all" && !!activeTag;
+              const isActive = item.href === pathname && !isAllItemsWithFilter;
+
+              return (
+                <NavItem
+                  key={item.label}
+                  href={item.href}
+                  isActive={isActive}
+                  icon={item.icon}
+                  label={item.label}
+                />
+              );
+            })}
           </div>
 
           <div className="bg-border my-4 h-px w-full" />
@@ -304,22 +307,26 @@ const Sidebar = () => {
             TAGS
           </div>
           <div className="flex flex-col gap-0.5">
-            {TAGS.map((tag) => {
-              const isActive = pathname === tag.href;
+            {tags?.map((tag) => {
+              const isActive =
+                pathname === "/all" && activeTag != null && activeTag === tag.name.toLowerCase();
               return (
                 <Link
                   key={tag.id}
-                  href={tag.href}
+                  href={`/all?tag=${tag.name}`}
                   className={cn(
-                    isActive ? "text-foreground" : "text-secondary",
-                    "flex w-full items-center justify-between rounded-md px-4 py-2 text-left",
+                    isActive
+                      ? "text-foreground bg-[#F0F0F0] dark:bg-[#181717]"
+                      : "text-secondary bg-transparent",
+                    "flex w-full items-center gap-2 rounded-md px-3 py-2",
                     "hover:bg-muted hover:text-foreground",
+                    "justify-between",
                   )}>
-                  <span className="flex items-center gap-2 text-sm font-medium">
+                  <span className="flex items-center gap-0.5 text-sm font-medium">
                     <span className="inline-flex size-5 shrink-0 items-center justify-center text-current">
                       #
                     </span>
-                    {tag.label}
+                    {tag.name}
                   </span>
                   <span className="text-secondary text-sm tabular-nums">{tag.count}</span>
                 </Link>
@@ -357,12 +364,20 @@ const Sidebar = () => {
   );
 };
 
-const AppShell = ({children, session}: {children: React.ReactNode; session: AppShellSession}) => {
+const AppShell = ({
+  children,
+  session,
+  tags,
+}: {
+  children: React.ReactNode;
+  session: AppShellSession;
+  tags?: {id: string; name: string; count: number}[];
+}) => {
   return (
     <main className="flex h-dvh min-h-screen flex-col">
       <Header session={session} />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <Sidebar />
+        <Sidebar tags={tags} />
         <div className="min-h-0 flex-1">{children}</div>
       </div>
       <AddItemDialog />

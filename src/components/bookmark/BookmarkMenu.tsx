@@ -63,7 +63,7 @@ export function BookmarkMenu({
       saved: formatDateWithTime(item?.created_at ?? ""),
       updated: formatDateWithTime(item?.updated_at ?? ""),
       preview_image: item?.preview_image,
-      tags: ["animation", "design", "videos"],
+      tags: item?.tags ?? [],
     };
   }, [item]);
 

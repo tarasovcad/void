@@ -20,7 +20,7 @@ export type Bookmark = {
   archived_at: string;
   deleted_at: string;
   notes: string;
-  // tags: string[];
+  tags?: string[];
 };
 
 function BookmarkHoverActions({
