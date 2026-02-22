@@ -10,6 +10,7 @@ import {Skeleton} from "@/components/coss-ui/skeleton";
 import {useMutation} from "@tanstack/react-query";
 import {generateAiSuggestions as generateAiSuggestionsAction} from "@/app/actions/tags";
 import {Tooltip, TooltipTrigger, TooltipPopup} from "@/components/coss-ui/tooltip";
+import {cn} from "@/lib/utils";
 export type TagsInputProps = {
   value?: string[];
   defaultValue?: string[];
@@ -17,11 +18,15 @@ export type TagsInputProps = {
   maxTags?: number;
   /** Max characters per tag after normalization (trim + collapse spaces). */
   maxTagLength?: number;
+  /** If true, keeps tags sorted A→Z whenever a tag is added. */
+  sortOnAdd?: boolean;
   placeholder?: string;
   label?: string;
   disabled?: boolean;
   /** If provided, a hidden input will be rendered (comma-separated). */
   name?: string;
+  labelClassName?: string;
+  containerClassName?: string;
 };
 
 const DEFAULT_MAX_TAGS = 10;
@@ -30,6 +35,14 @@ const DEFAULT_MAX_TAG_LENGTH = 64;
 type Tag = string;
 
 const FAKE_SUGGESTIONS = ["banana", "apple", "appear", "hello world"] as const;
+
+function sortTagsAZ(input: Tag[]) {
+  return [...input].sort(
+    (a, b) =>
+      a.localeCompare(b, undefined, {sensitivity: "base"}) ||
+      a.localeCompare(b, undefined, {sensitivity: "variant"}),
+  );
+}
 
 function clampString(input: string, maxLen: number) {
   return input.length > maxLen ? input.slice(0, maxLen) : input;
@@ -100,10 +113,13 @@ const TagsInput = ({
   onValueChange,
   maxTags = DEFAULT_MAX_TAGS,
   maxTagLength = DEFAULT_MAX_TAG_LENGTH,
+  sortOnAdd = true,
   placeholder = "Add tags...",
   label = "Add Tags",
   disabled = false,
   name,
+  labelClassName,
+  containerClassName,
 }: TagsInputProps) => {
   const {tags, setTags} = useControllableTags({value, defaultValue, onValueChange});
 
@@ -118,6 +134,11 @@ const TagsInput = ({
 
   const suggestion = useMemo(() => buildInlineSuggestion({inputValue, tags}), [inputValue, tags]);
   const canAddMore = tags.length < maxTags;
+
+  const maybeSort = useCallback(
+    (next: Tag[]) => (sortOnAdd ? sortTagsAZ(next) : next),
+    [sortOnAdd],
+  );
 
   const commitRawInput = useCallback(
     (raw: string) => {
@@ -148,13 +169,13 @@ const TagsInput = ({
         }
         return;
       }
-      setTags([...tags, ...toAdd]);
+      setTags(maybeSort([...tags, ...toAdd]));
       setInputValue("");
 
       // Keep typing flow smooth.
       inputRef.current?.focus();
     },
-    [canAddMore, maxTagLength, maxTags, setTags, tags],
+    [canAddMore, maxTagLength, maxTags, maybeSort, setTags, tags],
   );
 
   const removeTagAt = useCallback(
@@ -271,10 +292,10 @@ const TagsInput = ({
       if (!canAddMore) return false;
       const exists = new Set(tags.map((t) => t.toLowerCase()));
       if (exists.has(next.toLowerCase())) return false;
-      setTags([...tags, next]);
+      setTags(maybeSort([...tags, next]));
       return true;
     },
-    [canAddMore, maxTagLength, setTags, tags],
+    [canAddMore, maxTagLength, maybeSort, setTags, tags],
   );
 
   const addAiSuggestion = useCallback(
@@ -306,17 +327,19 @@ const TagsInput = ({
     }
 
     if (toAdd.length === 0) return;
-    setTags([...tags, ...toAdd]);
+    setTags(maybeSort([...tags, ...toAdd]));
     setAiSuggestions((prev) =>
       prev.filter((t) => !toAdd.some((a) => a.toLowerCase() === t.toLowerCase())),
     );
     inputRef.current?.focus();
-  }, [aiSuggestions, canAddMore, disabled, maxTagLength, maxTags, setTags, tags]);
+  }, [aiSuggestions, canAddMore, disabled, maxTagLength, maxTags, maybeSort, setTags, tags]);
 
   return (
-    <div className="flex w-full max-w-[460px] flex-col gap-2">
-      <label htmlFor={inputId} className="flex items-center gap-1 text-sm font-medium">
-        {label} <span className="text-muted-foreground">(max {maxTags})</span>
+    <div className={cn("flex w-full max-w-[460px] flex-col gap-2", containerClassName)}>
+      <label
+        htmlFor={inputId}
+        className={cn("flex items-center gap-1 text-sm font-medium", labelClassName)}>
+        {label} <span className="text-muted-foreground font-medium">(max {maxTags})</span>
         <InfoIcon />
       </label>
       <div className="space-y-3">

@@ -78,7 +78,7 @@ const AllItems = async (props: {searchParams?: Promise<SearchParams>}) => {
     name: t.name,
     count: typeof t.count === "string" ? Number(t.count) : (t.count ?? 0),
   }));
-
+  console.log(tags);
   if (bookmarksError) {
     return (
       <AppShell session={data}>

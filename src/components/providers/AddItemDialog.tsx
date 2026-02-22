@@ -153,7 +153,7 @@ export function AddItemDialog() {
                 ) : null}
               </div>
 
-              <TagsInput value={tags} onValueChange={setTags} name="tags" />
+              <TagsInput value={tags} onValueChange={setTags} name="tags" sortOnAdd={false} />
             </form>
           </DialogPanel>
 

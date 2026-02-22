@@ -134,7 +134,10 @@ export async function addBookmark(input: {
   if (error) throw error;
 
   // attach tags (bookmark creation should still succeed if tagging fails)
-  const tagNames = (input.tags ?? []).filter(Boolean);
+  const tagNames = (input.tags ?? [])
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, undefined, {sensitivity: "base"}));
   if (tagNames.length > 0) {
     const {error: tagsError} = await supabase.rpc("attach_tags_to_bookmark", {
       p_bookmark_id: data.id,
@@ -170,6 +173,7 @@ export type UpdateBookmarkData = {
   description?: string;
   preview_image?: string;
   notes?: string;
+  tags?: string[];
 };
 
 export async function updateBookmark(
@@ -184,6 +188,8 @@ export async function updateBookmark(
     throw new Error("Unauthorized");
   }
 
+  const hasTagUpdate = updates.tags !== undefined;
+
   // Only include fields that are actually present in the updates object
   const updateData: Record<string, string> = {};
   if (updates.title !== undefined) updateData.title = updates.title;
@@ -192,19 +198,29 @@ export async function updateBookmark(
   if (updates.notes !== undefined) updateData.notes = updates.notes;
 
   // If no fields to update, return early
-  if (Object.keys(updateData).length === 0) {
+  if (Object.keys(updateData).length === 0 && !hasTagUpdate) {
     return {ok: true};
   }
 
   const supabase = await createClient();
 
-  const {error} = await supabase
+  // Update bookmark fields
+  const {error: updateError} = await supabase
     .from("bookmarks")
     .update({...updateData, updated_at: new Date().toISOString()})
     .eq("id", bookmarkId)
     .eq("user_id", session.user.id);
 
-  if (error) throw error;
+  if (updateError) throw updateError;
+
+  if (hasTagUpdate) {
+    const {error: tagError} = await supabase.rpc("sync_bookmark_tags", {
+      p_bookmark_id: bookmarkId,
+      p_user_id: session.user.id,
+      p_tag_names: updates.tags ?? [],
+    });
+    if (tagError) throw tagError;
+  }
 
   return {ok: true};
 }

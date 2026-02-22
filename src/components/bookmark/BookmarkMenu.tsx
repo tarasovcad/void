@@ -30,6 +30,7 @@ import {
 import {toastManager} from "@/components/coss-ui/toast";
 import {type Bookmark} from "@/components/bookmark/Bookmark";
 import {useMutation, useQueryClient} from "@tanstack/react-query";
+import TagsInput from "@/components/ui/TagsInput";
 
 // Zod schema for bookmark form validation
 const bookmarkFormSchema = z.object({
@@ -37,9 +38,18 @@ const bookmarkFormSchema = z.object({
   description: z.string().max(1000, "Description must be less than 1000 characters").optional(),
   preview_image: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   notes: z.string().max(1000, "Notes must be less than 1000 characters").optional(),
+  tags: z.array(z.string()).max(10).default([]),
 });
 
-type BookmarkFormValues = z.infer<typeof bookmarkFormSchema>;
+type BookmarkFormValues = z.input<typeof bookmarkFormSchema>;
+
+function normalizeTagsForCompare(tags: string[] | undefined) {
+  return (tags ?? [])
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, undefined, {sensitivity: "base"}))
+    .join(",");
+}
 
 export function BookmarkMenu({
   item,
@@ -75,6 +85,7 @@ export function BookmarkMenu({
       description: item?.description ?? "",
       preview_image: item?.preview_image ?? "",
       notes: item?.notes ?? "",
+      tags: item?.tags ?? [],
     },
   });
 
@@ -83,6 +94,7 @@ export function BookmarkMenu({
     description: "",
     preview_image: "",
     notes: "",
+    tags: [],
   });
 
   const titleElRef = useRef<HTMLHeadingElement | null>(null);
@@ -95,6 +107,7 @@ export function BookmarkMenu({
         description: item.description,
         preview_image: item.preview_image,
         notes: item.notes ?? "",
+        tags: item.tags ?? [],
       };
       form.reset(values);
       originalValues.current = values;
@@ -109,7 +122,9 @@ export function BookmarkMenu({
       (currentValues.title ?? "") !== (originalValues.current.title ?? "") ||
       (currentValues.description ?? "") !== (originalValues.current.description ?? "") ||
       (currentValues.preview_image ?? "") !== (originalValues.current.preview_image ?? "") ||
-      (currentValues.notes ?? "") !== (originalValues.current.notes ?? "")
+      (currentValues.notes ?? "") !== (originalValues.current.notes ?? "") ||
+      normalizeTagsForCompare(currentValues.tags) !==
+        normalizeTagsForCompare(originalValues.current.tags)
     );
   }, [currentValues, item]);
 
@@ -178,6 +193,12 @@ export function BookmarkMenu({
 
     if ((values.notes ?? "") !== (originalValues.current.notes ?? "")) {
       updates.notes = values.notes ?? "";
+    }
+
+    if (
+      normalizeTagsForCompare(values.tags) !== normalizeTagsForCompare(originalValues.current.tags)
+    ) {
+      updates.tags = values.tags ?? [];
     }
 
     if (Object.keys(updates).length === 0) {
@@ -476,7 +497,7 @@ export function BookmarkMenu({
               <div className="p-6 text-[15px]">
                 <div className="font-semibold">Details</div>
 
-                <div className="mt-4 grid grid-cols-[120px_1fr] gap-y-3">
+                <div className="mt-3 grid grid-cols-[120px_1fr] gap-y-3">
                   <div className="text-muted-foreground">Source</div>
                   <button
                     type="button"
@@ -523,14 +544,20 @@ export function BookmarkMenu({
                       <div>{data.updated}</div>
                     </>
                   )}
-
-                  <div className="text-muted-foreground">Tags</div>
-                  <div className="flex flex-wrap gap-x-2 gap-y-1">
-                    {data.tags.map((t) => (
-                      <span key={t}>#{t}</span>
-                    ))}
-                  </div>
                 </div>
+              </div>
+
+              <Separator />
+
+              <div className="p-6 text-[15px]">
+                <TagsInput
+                  value={currentValues.tags ?? []}
+                  onValueChange={(next) => form.setValue("tags", next, {shouldDirty: true})}
+                  label="Tags"
+                  placeholder="Add tags..."
+                  labelClassName="text-[15px] font-semibold"
+                  containerClassName="max-w-full gap-3"
+                />
               </div>
 
               <Separator />
