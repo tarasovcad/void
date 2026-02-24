@@ -22,6 +22,7 @@ import {
 import {Checkbox} from "@/components/coss-ui/checkbox";
 import {useQuery} from "@tanstack/react-query";
 import {getTags} from "@/app/actions/tags";
+import {getCollections} from "@/app/actions/collections";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -34,6 +35,7 @@ import NumberFlow from "@number-flow/react";
 import {useClipboardCopy} from "@/lib/useClipboardCopy";
 import {SelectionActionBar} from "@/app/all/SelectionActionBar";
 import {DeleteTagDialog} from "./DeleteTagDialog";
+import type {Collection} from "@/app/actions/collections";
 
 const NavItem = ({
   isActive,
@@ -136,34 +138,22 @@ const NAV_ITEMS = [
   },
 ];
 
-const COLLECTIONS = [
-  {id: "project-alpha", label: "Project Alpha", href: "/collections/project-alpha"},
-  {id: "design-inspiration", label: "Design Inspiration", href: "/collections/design-inspiration"},
-  {id: "react-resources", label: "React Resources", href: "/collections/react-resources"},
-  {id: "nextjs-resources", label: "Next.js Resources", href: "/collections/nextjs-resources"},
-  {id: "tailwind-resources", label: "Tailwind Resources", href: "/collections/tailwind-resources"},
-  {
-    id: "typescript-resources",
-    label: "Typescript Resources",
-    href: "/collections/typescript-resources",
-  },
-  {
-    id: "javascript-resources",
-    label: "Javascript Resources",
-    href: "/collections/javascript-resources",
-  },
-  {id: "html-resources", label: "HTML Resources", href: "/collections/html-resources"},
-  {id: "css-resources", label: "CSS Resources", href: "/collections/css-resources"},
-  {id: "nodejs-resources", label: "Node.js Resources", href: "/collections/nodejs-resources"},
-] as const;
-
 export type SidebarTags = {id: string; name: string; count: number}[];
 
-export function Sidebar({tags: initialTags}: {tags?: SidebarTags}) {
+export function Sidebar({
+  tags: initialTags,
+  collections: initialCollections,
+  onCreateCollection,
+}: {
+  tags?: SidebarTags;
+  collections?: Collection[];
+  onCreateCollection?: () => void;
+}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [tagsExpanded, setTagsExpanded] = useState(true);
+  const [collectionsExpanded, setCollectionsExpanded] = useState(true);
   const [tagsSelectValue, setTagsSelectValue] = useState("all");
   const [tagSelectionMode, setTagSelectionMode] = useState(false);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
@@ -190,6 +180,12 @@ export function Sidebar({tags: initialTags}: {tags?: SidebarTags}) {
     queryKey: ["tags"],
     queryFn: async () => await getTags(),
     initialData: initialTags,
+  });
+
+  const {data: collections} = useQuery({
+    queryKey: ["collections"],
+    queryFn: async () => await getCollections(),
+    initialData: initialCollections,
   });
 
   const selectedCount = selectedTagIds.size;
@@ -250,35 +246,209 @@ export function Sidebar({tags: initialTags}: {tags?: SidebarTags}) {
           <div className="min-h-0 flex-1">
             <ScrollArea className="**:data-[slot=scroll-area-scrollbar]:m-0.5">
               <div className="px-3 pe-2">
-                <div className="text-muted-foreground px-4 pb-1 text-[11px] font-semibold tracking-wider">
-                  COLLECTIONS
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  {COLLECTIONS.map((c) => (
-                    <NavItem
-                      key={c.id}
-                      href={c.href}
-                      isActive={pathname === c.href}
-                      icon={
-                        <span aria-hidden="true" className="text-base leading-none">
+                <div
+                  onClick={() => setCollectionsExpanded((prev) => !prev)}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium",
+                    "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    "group/collections cursor-pointer text-[11px] font-semibold tracking-wider uppercase",
+                    "h-[37px]",
+                  )}>
+                  <div className="flex items-center gap-0.5">
+                    <span className="">Collections</span>
+                    <span
+                      className={cn(
+                        "inline-flex size-5 shrink-0 items-center justify-center text-current transition-transform duration-200 ease-out",
+                        collectionsExpanded ? "rotate-0" : "-rotate-90",
+                      )}
+                      aria-hidden>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 14 14"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="opacity-0 transition-opacity duration-150 ease-out group-hover/collections:opacity-100">
+                        <path
+                          d="M10.0879 5.1292C10.3156 4.90139 10.6849 4.90139 10.9127 5.1292C11.1405 5.35701 11.1405 5.72626 10.9127 5.95409L7.41274 9.45409C7.18489 9.68189 6.81564 9.68189 6.58785 9.45409L3.08784 5.95409C2.86004 5.72626 2.86004 5.35701 3.08784 5.1292C3.31565 4.90139 3.68491 4.90139 3.91272 5.1292L7.00027 8.21679L10.0879 5.1292Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    <Menu>
+                      <MenuTrigger
+                        type="button"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label="Collection options"
+                        className={cn(
+                          buttonVariants({variant: "ghost", size: "icon-xs"}),
+                          "text-muted-foreground hover:bg-foreground/5",
+                          "pointer-events-none opacity-0 transition-opacity duration-150 ease-out",
+                          "group-hover/collections:pointer-events-auto group-hover/collections:opacity-100",
+                        )}>
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg">
+                          <path
+                            d="M8.00033 9.33332C8.73671 9.33332 9.33366 8.73637 9.33366 7.99999C9.33366 7.26361 8.73671 6.66666 8.00033 6.66666C7.26395 6.66666 6.66699 7.26361 6.66699 7.99999C6.66699 8.73637 7.26395 9.33332 8.00033 9.33332Z"
+                            fill="currentColor"
+                          />
+                          <path
+                            d="M12.6663 9.33332C13.4027 9.33332 13.9997 8.73637 13.9997 7.99999C13.9997 7.26361 13.4027 6.66666 12.6663 6.66666C11.93 6.66666 11.333 7.26361 11.333 7.99999C11.333 8.73637 11.93 9.33332 12.6663 9.33332Z"
+                            fill="currentColor"
+                          />
+                          <path
+                            d="M3.33333 9.33332C4.06971 9.33332 4.66667 8.73637 4.66667 7.99999C4.66667 7.26361 4.06971 6.66666 3.33333 6.66666C2.59695 6.66666 2 7.26361 2 7.99999C2 8.73637 2.59695 9.33332 3.33333 9.33332Z"
+                            fill="currentColor"
+                          />
+                        </svg>
+                      </MenuTrigger>
+                      <MenuPopup align="center" className="w-40">
+                        <MenuCheckboxItem
+                          checked={tagSelectionMode}
+                          onCheckedChange={(checked) => {
+                            setTagSelectionMode(checked);
+                            if (!checked) setSelectedTagIds(new Set());
+                            setTagMenuOpen(false);
+                          }}>
+                          Select
+                        </MenuCheckboxItem>
+
+                        <MenuSub disabled>
+                          <MenuSubTrigger>
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 16 16"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg">
+                              <path
+                                fillRule="evenodd"
+                                clipRule="evenodd"
+                                d="M6.08269 2.00513C6.44803 2.05079 6.7072 2.38399 6.66152 2.74933L6.42185 4.66664H10.4115L10.6718 2.58395C10.7175 2.21861 11.0507 1.95945 11.416 2.00513C11.7814 2.05079 12.0405 2.38399 11.9949 2.74933L11.7552 4.66664H13.3333C13.7015 4.66664 14 4.96512 14 5.33331C14 5.7015 13.7015 5.99997 13.3333 5.99997H11.5885L11.0885 9.99999H13.3333C13.7015 9.99999 14 10.2985 14 10.6667C14 11.0349 13.7015 11.3333 13.3333 11.3333H10.9219L10.6615 13.416C10.6159 13.7813 10.2827 14.0405 9.91733 13.9949C9.55193 13.9492 9.2928 13.616 9.33847 13.2506L9.57813 11.3333H5.58852L5.32819 13.416C5.28252 13.7813 4.94933 14.0405 4.58398 13.9949C4.21863 13.9492 3.95948 13.616 4.00515 13.2506L4.24481 11.3333H2.66667C2.29848 11.3333 2 11.0349 2 10.6667C2 10.2985 2.29848 9.99999 2.66667 9.99999H4.41148L4.91148 5.99997H2.66667C2.29848 5.99997 2 5.7015 2 5.33331C2 4.96512 2.29848 4.66664 2.66667 4.66664H5.07815L5.33848 2.58395C5.38415 2.21861 5.71734 1.95945 6.08269 2.00513ZM6.25519 5.99997L5.75519 9.99999H9.7448L10.2448 5.99997H6.25519Z"
+                                fill="currentColor"
+                              />
+                            </svg>
+                            Show
+                          </MenuSubTrigger>
+                          <MenuSubPopup className="w-44">
+                            <MenuRadioGroup
+                              value={tagsSelectValue}
+                              onValueChange={(v) => setTagsSelectValue(String(v))}>
+                              <MenuRadioItem value="5">5 items</MenuRadioItem>
+                              <MenuRadioItem value="10">10 items</MenuRadioItem>
+                              <MenuRadioItem value="15">15 items</MenuRadioItem>
+                              <MenuRadioItem value="20">20 items</MenuRadioItem>
+                              <MenuRadioItem value="50">50 items</MenuRadioItem>
+                              <MenuRadioItem value="all">All items</MenuRadioItem>
+                            </MenuRadioGroup>
+                          </MenuSubPopup>
+                        </MenuSub>
+                        <MenuSeparator />
+                        <MenuItem disabled>
                           <svg
-                            width="20"
-                            height="20"
-                            viewBox="0 0 20 20"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 16 16"
                             fill="none"
                             xmlns="http://www.w3.org/2000/svg">
                             <path
                               fillRule="evenodd"
                               clipRule="evenodd"
-                              d="M8.1801 5.20811C8.42024 4.93063 8.80956 4.93063 9.04971 5.20811L11.4597 7.99274C12.1801 8.8252 12.1801 10.1748 11.4597 11.0073L9.04971 13.7919C8.80956 14.0694 8.42024 14.0694 8.1801 13.7919C7.93997 13.5144 7.93997 13.0646 8.1801 12.7871L10.59 10.0024C10.8302 9.72492 10.8302 9.2751 10.59 8.99762L8.1801 6.21295C7.93997 5.93547 7.93997 5.48558 8.1801 5.20811Z"
+                              d="M14.6663 8.00001C14.6663 4.31811 11.6815 1.33334 7.99967 1.33334C4.31777 1.33334 1.33301 4.31811 1.33301 8.00001C1.33301 11.6819 4.31777 14.6667 7.99967 14.6667C11.6815 14.6667 14.6663 11.6819 14.6663 8.00001ZM5.52827 6.86194C5.26792 7.12228 5.26792 7.54441 5.52827 7.80474C5.78862 8.06508 6.21073 8.06508 6.47108 7.80474L7.33301 6.94281V10.6667C7.33301 11.0349 7.63147 11.3333 7.99967 11.3333C8.36787 11.3333 8.66634 11.0349 8.66634 10.6667V6.94281L9.52827 7.80474C9.78861 8.06508 10.2107 8.06508 10.4711 7.80474C10.7314 7.54441 10.7314 7.12228 10.4711 6.86194L8.47107 4.86194C8.21074 4.60159 7.78861 4.60159 7.52827 4.86194L5.52827 6.86194Z"
                               fill="currentColor"
                             />
                           </svg>
-                        </span>
-                      }
-                      label={c.label}
-                    />
-                  ))}
+                          Move Up
+                        </MenuItem>
+                        <MenuItem disabled>
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="rotate-180">
+                            <path
+                              fillRule="evenodd"
+                              clipRule="evenodd"
+                              d="M14.6663 8.00001C14.6663 4.31811 11.6815 1.33334 7.99967 1.33334C4.31777 1.33334 1.33301 4.31811 1.33301 8.00001C1.33301 11.6819 4.31777 14.6667 7.99967 14.6667C11.6815 14.6667 14.6663 11.6819 14.6663 8.00001ZM5.52827 6.86194C5.26792 7.12228 5.26792 7.54441 5.52827 7.80474C5.78862 8.06508 6.21073 8.06508 6.47108 7.80474L7.33301 6.94281V10.6667C7.33301 11.0349 7.63147 11.3333 7.99967 11.3333C8.36787 11.3333 8.66634 11.0349 8.66634 10.6667V6.94281L9.52827 7.80474C9.78861 8.06508 10.2107 8.06508 10.4711 7.80474C10.7314 7.54441 10.7314 7.12228 10.4711 6.86194L8.47107 4.86194C8.21074 4.60159 7.78861 4.60159 7.52827 4.86194L5.52827 6.86194Z"
+                              fill="currentColor"
+                            />
+                          </svg>
+                          Move Down
+                        </MenuItem>
+                      </MenuPopup>
+                    </Menu>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCreateCollection?.();
+                      }}
+                      className={cn(
+                        buttonVariants({variant: "ghost", size: "icon-xs"}),
+                        "text-muted-foreground hover:bg-foreground/5",
+                        "pointer-events-none opacity-0 transition-opacity duration-150 ease-out",
+                        "group-hover/collections:pointer-events-auto group-hover/collections:opacity-100",
+                      )}>
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 15 15"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path
+                          fillRule="evenodd"
+                          clipRule="evenodd"
+                          d="M7.5 1.875C7.84519 1.875 8.125 2.15482 8.125 2.5V6.875H12.5C12.8452 6.875 13.125 7.15481 13.125 7.5C13.125 7.84519 12.8452 8.125 12.5 8.125H8.125V12.5C8.125 12.8452 7.84519 13.125 7.5 13.125C7.15481 13.125 6.875 12.8452 6.875 12.5V8.125H2.5C2.15482 8.125 1.875 7.84519 1.875 7.5C1.875 7.15481 2.15482 6.875 2.5 6.875H6.875V2.5C6.875 2.15482 7.15481 1.875 7.5 1.875Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <AnimatePresence initial={false}>
+                    {collectionsExpanded &&
+                      collections?.map((c) => (
+                        <motion.div
+                          key={c.id}
+                          initial={false}
+                          animate={{opacity: 1, height: "auto", filter: "blur(0px)"}}
+                          exit={{opacity: 0, height: 0, filter: "blur(8px)"}}
+                          transition={{duration: 0.25, ease: "easeOut"}}>
+                          <NavItem
+                            href={`/all?collection=${c.id}`}
+                            isActive={
+                              pathname === "/all" && searchParams.get("collection") === c.id
+                            }
+                            icon={
+                              <span aria-hidden="true" className="text-base leading-none">
+                                <svg
+                                  width="20"
+                                  height="20"
+                                  viewBox="0 0 20 20"
+                                  fill="none"
+                                  xmlns="http://www.w3.org/2000/svg">
+                                  <path
+                                    fillRule="evenodd"
+                                    clipRule="evenodd"
+                                    d="M8.1801 5.20811C8.42024 4.93063 8.80956 4.93063 9.04971 5.20811L11.4597 7.99274C12.1801 8.8252 12.1801 10.1748 11.4597 11.0073L9.04971 13.7919C8.80956 14.0694 8.42024 14.0694 8.1801 13.7919C7.93997 13.5144 7.93997 13.0646 8.1801 12.7871L10.59 10.0024C10.8302 9.72492 10.8302 9.2751 10.59 8.99762L8.1801 6.21295C7.93997 5.93547 7.93997 5.48558 8.1801 5.20811Z"
+                                    fill="currentColor"
+                                  />
+                                </svg>
+                              </span>
+                            }
+                            label={c.name}
+                          />
+                        </motion.div>
+                      ))}
+                  </AnimatePresence>
                 </div>
 
                 <div className="bg-border my-4 h-px w-full" />

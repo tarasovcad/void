@@ -10,6 +10,7 @@ import {
   useInfiniteQuery,
   useMutation,
   useMutationState,
+  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import {supabase} from "@/components/utils/supabase/client";
@@ -24,6 +25,9 @@ import {SelectionActionBar} from "./SelectionActionBar";
 import {archiveBookmarks} from "@/app/actions/bookmarks";
 import {tagNamesFromJoin, type BookmarkTagJoinRow} from "@/lib/bookmark-tags";
 import {useSearchParams} from "next/navigation";
+import type {Collection} from "@/app/actions/collections";
+import {getCollections} from "@/app/actions/collections";
+import {Button} from "@/components/coss-ui/button";
 
 function normalizeTagParam(value: string | null | undefined) {
   const normalized = (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
@@ -55,6 +59,7 @@ export default function AllItemsClient({
 }) {
   const searchParams = useSearchParams();
   const tagFilter = normalizeTagParam(searchParams.get("tag") ?? searchParams.get("tab"));
+  const collectionFilter = searchParams.get("collection");
 
   // ── View & filter state ──
   const [view, setView] = useState<ViewMode>("list");
@@ -182,7 +187,7 @@ export default function AllItemsClient({
 
   // ── Bookmarks query (paginated) ──
   const bookmarksQuery = useInfiniteQuery({
-    queryKey: ["bookmarks", "all-items", userId, PAGE_SIZE, sort, tagFilter],
+    queryKey: ["bookmarks", "all-items", userId, PAGE_SIZE, sort, tagFilter, collectionFilter],
     enabled: !!userId,
     initialPageParam: 0,
     queryFn: async ({pageParam}) => {
@@ -196,20 +201,38 @@ export default function AllItemsClient({
         };
       }
 
-      // When filtering by tag we use an inner join so only matching bookmarks are returned.
-      const bookmarksSelect = tagFilter
-        ? "*, bookmark_tags!inner(tags!inner(name))"
-        : "*, bookmark_tags(tags(name))";
+      // When filtering by tag or collection we use an inner join so only matching bookmarks are returned.
+      const getBookmarksSelect = () => {
+        const hasTag = !!tagFilter;
+        const hasCollection = !!collectionFilter;
+
+        switch (true) {
+          case hasTag && hasCollection:
+            return "*, bookmark_tags!inner(tags!inner(name)), bookmark_collections!inner(collection_id)";
+          case hasTag:
+            return "*, bookmark_tags!inner(tags!inner(name))";
+          case hasCollection:
+            return "*, bookmark_tags(tags(name)), bookmark_collections!inner(collection_id)";
+          default:
+            return "*, bookmark_tags(tags(name))";
+        }
+      };
+
+      const bookmarksSelect = getBookmarksSelect();
 
       let q =
         offset === 0
-          ? supabase.from("bookmarks").select(bookmarksSelect, {count: "exact"})
-          : supabase.from("bookmarks").select(bookmarksSelect);
+          ? supabase.from("bookmarks").select(bookmarksSelect as "*", {count: "exact"})
+          : supabase.from("bookmarks").select(bookmarksSelect as "*");
 
       q = q.eq("user_id", userId).is("archived_at", null).is("deleted_at", null);
 
       if (tagFilter) {
         q = q.eq("bookmark_tags.tags.name", tagFilter);
+      }
+
+      if (collectionFilter) {
+        q = q.eq("bookmark_collections.collection_id", collectionFilter);
       }
 
       // Apply sort order
@@ -226,7 +249,7 @@ export default function AllItemsClient({
 
       type BookmarkRowWithJoins = Bookmark & {bookmark_tags?: BookmarkTagJoinRow[] | null};
 
-      const items: Bookmark[] = ((data ?? []) as BookmarkRowWithJoins[]).map(
+      const items: Bookmark[] = ((data ?? []) as unknown as BookmarkRowWithJoins[]).map(
         ({bookmark_tags, ...bookmark}) => ({
           ...(bookmark as Bookmark),
           tags: tagNamesFromJoin(bookmark_tags),
@@ -236,9 +259,9 @@ export default function AllItemsClient({
       return {items, nextOffset, totalCount: count ?? 0};
     },
     getNextPageParam: (lastPage) => lastPage.nextOffset,
-    // Only seed initial data for the default sort to avoid stale mismatch
+    // Only seed initial data for the default sort and no filters to avoid stale mismatch
     initialData:
-      sort === "recent"
+      sort === "recent" && !tagFilter && !collectionFilter
         ? {
             pageParams: [0],
             pages: [
@@ -331,6 +354,16 @@ export default function AllItemsClient({
   }, [allBookmarks, typeFilter, resolvedBookmark, animatedOutIds]);
 
   const visibleIds = React.useMemo(() => visibleItems.map((i) => i.id), [visibleItems]);
+  const {data: collections} = useQuery({
+    queryKey: ["collections"],
+    queryFn: async () => await getCollections(),
+  });
+
+  const activeCollection = React.useMemo(() => {
+    if (!collectionFilter || !collections) return null;
+    return (collections as Collection[]).find((c) => c.id === collectionFilter) ?? null;
+  }, [collectionFilter, collections]);
+
   const selectedCount = selectedIds.size;
 
   React.useEffect(() => {
@@ -465,6 +498,66 @@ export default function AllItemsClient({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
+      {/* Collection Header */}
+      {activeCollection && (
+        <div className="border-b px-6 py-8">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <h1 className="text-3xl font-bold tracking-tight">{activeCollection.name}</h1>
+              {activeCollection.description && (
+                <p className="text-muted-foreground text-lg">{activeCollection.description}</p>
+              )}
+              <div className="text-muted-foreground flex items-center gap-4 pt-2 text-sm">
+                <span>
+                  Items: <NumberFlow value={currentTotalCount} />
+                </span>
+
+                <span>
+                  Last updated:{" "}
+                  {new Date(activeCollection.created_at).toLocaleDateString(undefined, {
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button variant="outline">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M9.69543 2.36216C10.7842 1.27338 12.5494 1.27338 13.6382 2.36216C14.727 3.45094 14.727 5.21619 13.6382 6.30497L5.66683 14.2764C5.41678 14.5264 5.07764 14.6669 4.72402 14.6669H2.00016C1.63198 14.6669 1.3335 14.3684 1.3335 14.0002V11.2764C1.3335 10.9227 1.47397 10.5836 1.72402 10.3335L8.0575 4.00012L12.0002 7.9428L12.943 7L9.0003 3.05731L9.69543 2.36216Z"
+                    fill="currentColor"
+                  />
+                </svg>
+                Edit
+              </Button>
+              <Button variant="destructive-outline">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    fillRule="evenodd"
+                    clipRule="evenodd"
+                    d="M5.24601 3.33334H2.16699C1.89085 3.33334 1.66699 3.5572 1.66699 3.83334C1.66699 4.10948 1.89085 4.33334 2.16699 4.33334H2.66697C2.66699 4.34494 2.6674 4.35662 2.66822 4.36836L3.2281 12.3418C3.32005 13.6513 4.4092 14.6667 5.72196 14.6667H10.2787C11.5915 14.6667 12.6806 13.6513 12.7725 12.3418L13.3325 4.36836C13.3333 4.35662 13.3337 4.34494 13.3337 4.33334H13.8337C14.1098 4.33334 14.3337 4.10948 14.3337 3.83334C14.3337 3.5572 14.1098 3.33334 13.8337 3.33334H10.7547C10.4547 2.09005 9.33573 1.16667 8.00039 1.16667C6.66504 1.16667 5.54599 2.09005 5.24601 3.33334ZM6.29188 3.33334H9.70886C9.44219 2.65056 8.77752 2.16667 8.00039 2.16667C7.22319 2.16667 6.55853 2.65056 6.29188 3.33334ZM6.66699 6.50001C6.94313 6.50001 7.16699 6.72387 7.16699 7.00001V10.8333C7.16699 11.1095 6.94313 11.3333 6.66699 11.3333C6.39085 11.3333 6.16699 11.1095 6.16699 10.8333V7.00001C6.16699 6.72387 6.39085 6.50001 6.66699 6.50001ZM9.33366 6.50001C9.60979 6.50001 9.83366 6.72387 9.83366 7.00001V10.8333C9.83366 11.1095 9.60979 11.3333 9.33366 11.3333C9.05753 11.3333 8.83366 11.1095 8.83366 10.8333V7.00001C8.83366 6.72387 9.05753 6.50001 9.33366 6.50001Z"
+                    fill="currentColor"
+                  />
+                </svg>
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Toolbar */}
       <div className="bg-background/90 sticky top-0 z-10 border-b px-6 py-3 backdrop-blur">
         <div className="flex items-center justify-between gap-4">
@@ -506,7 +599,6 @@ export default function AllItemsClient({
           </div>
         </div>
       </div>
-
       {/* Portalled overlays */}
       <BookmarkMenu
         item={menuItem}
@@ -521,11 +613,13 @@ export default function AllItemsClient({
         items={itemsToDelete}
         onDeleted={handleClearSelection}
       />
-
       {/* Item count */}
-      <div className="text-muted-foreground flex items-center gap-1 px-6 py-3 text-sm">
-        <NumberFlow value={currentTotalCount} /> items
-      </div>
+      {!activeCollection && (
+        <div className="text-muted-foreground flex items-center gap-1 px-6 py-3 text-sm">
+          <NumberFlow value={currentTotalCount} /> items
+        </div>
+      )}
+
       {/* Scrollable content area */}
       <div ref={scrollAreaRootRef} className="h-auto min-h-0 flex-1">
         <ScrollArea className="h-full" scrollbarGutter scrollFade>
@@ -644,7 +738,6 @@ export default function AllItemsClient({
           )}
         </ScrollArea>
       </div>
-
       {/* ── Floating selection action bar ── */}
       <SelectionActionBar
         visible={selectionMode && selectedCount > 0}

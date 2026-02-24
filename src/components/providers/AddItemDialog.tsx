@@ -19,6 +19,7 @@ import {
 } from "@/components/coss-ui/dialog";
 import {addBookmark, type AddBookmarkResult} from "@/app/actions/bookmarks";
 import TagsInput from "../ui/TagsInput";
+import {Label} from "../coss-ui/label";
 
 const addItemUrlSchema = z
   .string()
@@ -135,7 +136,7 @@ export function AddItemDialog() {
                 submit();
               }}>
               <div className="flex flex-col gap-2">
-                <div className="text-sm font-medium">URL</div>
+                <Label htmlFor="url">URL</Label>
                 <Input
                   type="url"
                   placeholder="https://example.com"

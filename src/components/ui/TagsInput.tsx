@@ -256,11 +256,7 @@ const TagsInput = ({
   const aiMutation = useMutation({
     mutationKey: ["generate-tag-suggestions"],
     mutationFn: async () => {
-      return generateAiSuggestionsAction({
-        input: inputValue,
-        existing: tags,
-        limit: Math.min(8, Math.max(0, maxTags)),
-      });
+      return generateAiSuggestionsAction();
     },
     onMutate: () => {
       setAiStatus("loading");
