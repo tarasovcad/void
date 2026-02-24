@@ -1,60 +1,35 @@
 "use server";
 
-export type GenerateAiSuggestionsInput = {
-  input?: string;
-  existing?: string[];
-  limit?: number;
-};
+import {auth} from "@/lib/auth";
+import {headers} from "next/headers";
+import {createClient} from "@/components/utils/supabase/server";
 
-const FAKE_AI_TAG_POOL = [
-  "react",
-  "nextjs",
-  "typescript",
-  "tailwind",
-  "ui",
-  "frontend",
-  "design system",
-  "accessibility",
-  "animations",
-  "forms",
-  "performance",
-  "testing",
-  "zustand",
-  "tanstack query",
-  "components",
-  "tags",
-  "autocomplete",
-] as const;
+type TagsWithCountsRow = {id: string; name: string; count: number | string | null};
 
-function normalizeTag(raw: string) {
-  return raw
-    .replace(/[,|\n|\r]/g, " ")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
+export async function generateAiSuggestions() {
+  return {
+    suggestions: ["react", "nextjs", "typescript", "tailwind", "ui"],
+  };
 }
 
-export async function generateAiSuggestions(input: GenerateAiSuggestionsInput = {}) {
-  // Wait for 5 seconds before continuing as requested.
-  await new Promise((r) => setTimeout(r, 5000));
+export async function getTags() {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
 
-  const limit = Math.max(0, Math.min(12, input.limit ?? 6));
-  const existing = new Set((input.existing ?? []).map((t) => normalizeTag(t)).filter(Boolean));
+  if (!session) return [];
 
-  const fromInput = (input.input ?? "")
-    .split(/\s+/g)
-    .map((t) => normalizeTag(t))
-    .filter(Boolean);
+  const supabase = await createClient();
+  const {data, error} = await supabase.rpc("get_tags_with_counts", {p_user_id: session.user.id});
 
-  const pool = [...fromInput, ...FAKE_AI_TAG_POOL].map((t) => normalizeTag(t)).filter(Boolean);
-  const suggestions: string[] = [];
-
-  for (const t of pool) {
-    if (existing.has(t)) continue;
-    if (suggestions.includes(t)) continue;
-    suggestions.push(t);
-    if (suggestions.length >= limit) break;
+  if (error) {
+    console.error("Failed to fetch tags with counts:", error);
+    return [];
   }
 
-  return {suggestions};
+  return ((data ?? []) as TagsWithCountsRow[]).map((t) => ({
+    id: t.id,
+    name: t.name,
+    count: typeof t.count === "string" ? Number(t.count) : (t.count ?? 0),
+  }));
 }

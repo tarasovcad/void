@@ -30,6 +30,10 @@ function normalizeTagParam(value: string | null | undefined) {
   return normalized.length > 0 ? normalized : null;
 }
 
+function normalizeTagName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function LoadingSpinner({className}: {className?: string}) {
   return (
     <div className={className}>
@@ -105,7 +109,8 @@ export default function AllItemsClient({
     filters: {mutationKey: ["add-bookmark"]},
     select: (m) => ({
       status: m.state.status as string,
-      inputUrl: (m.state.variables as {url: string} | undefined)?.url,
+      inputUrl: (m.state.variables as {url: string; tags?: string[]} | undefined)?.url,
+      inputTags: (m.state.variables as {url: string; tags?: string[]} | undefined)?.tags ?? [],
       resultUrl: (m.state.data as {url: string} | undefined)?.url,
     }),
   });
@@ -115,6 +120,9 @@ export default function AllItemsClient({
   const isError = latestAdd?.status === "error";
   const inputUrl = latestAdd?.inputUrl;
   const resultUrl = latestAdd?.resultUrl;
+  const latestAddAppliesToCurrentFilter =
+    tagFilter === null ||
+    (latestAdd?.inputTags ?? []).some((t) => normalizeTagName(t) === (tagFilter ?? ""));
 
   // ── Delete-bookmark mutation tracking ──
   // Collects IDs of bookmarks currently being deleted (pending/success)
@@ -165,7 +173,7 @@ export default function AllItemsClient({
   // we show a skeleton placeholder; on error we clear it immediately.
   const [animatingUrl, setAnimatingUrl] = useState<string | null>(null);
 
-  if (isPending && inputUrl && animatingUrl !== inputUrl) {
+  if (isPending && inputUrl && latestAddAppliesToCurrentFilter && animatingUrl !== inputUrl) {
     setAnimatingUrl(inputUrl);
   }
   if (isError && animatingUrl !== null) {
@@ -181,7 +189,11 @@ export default function AllItemsClient({
       const offset = typeof pageParam === "number" ? pageParam : 0;
 
       if (!userId) {
-        return {items: [] as Bookmark[], nextOffset: undefined as number | undefined};
+        return {
+          items: [] as Bookmark[],
+          nextOffset: undefined as number | undefined,
+          totalCount: 0,
+        };
       }
 
       // When filtering by tag we use an inner join so only matching bookmarks are returned.
@@ -189,12 +201,12 @@ export default function AllItemsClient({
         ? "*, bookmark_tags!inner(tags!inner(name))"
         : "*, bookmark_tags(tags(name))";
 
-      let q = supabase
-        .from("bookmarks")
-        .select(bookmarksSelect)
-        .eq("user_id", userId)
-        .is("archived_at", null)
-        .is("deleted_at", null);
+      let q =
+        offset === 0
+          ? supabase.from("bookmarks").select(bookmarksSelect, {count: "exact"})
+          : supabase.from("bookmarks").select(bookmarksSelect);
+
+      q = q.eq("user_id", userId).is("archived_at", null).is("deleted_at", null);
 
       if (tagFilter) {
         q = q.eq("bookmark_tags.tags.name", tagFilter);
@@ -209,7 +221,7 @@ export default function AllItemsClient({
         q = q.order("created_at", {ascending: false});
       }
 
-      const {data, error} = await q.range(offset, offset + PAGE_SIZE - 1);
+      const {data, count, error} = await q.range(offset, offset + PAGE_SIZE - 1);
       if (error) throw error;
 
       type BookmarkRowWithJoins = Bookmark & {bookmark_tags?: BookmarkTagJoinRow[] | null};
@@ -221,7 +233,7 @@ export default function AllItemsClient({
         }),
       );
       const nextOffset = items.length < PAGE_SIZE ? undefined : offset + PAGE_SIZE;
-      return {items, nextOffset};
+      return {items, nextOffset, totalCount: count ?? 0};
     },
     getNextPageParam: (lastPage) => lastPage.nextOffset,
     // Only seed initial data for the default sort to avoid stale mismatch
@@ -233,6 +245,7 @@ export default function AllItemsClient({
               {
                 items: initialBookmarks,
                 nextOffset: initialBookmarks.length < PAGE_SIZE ? undefined : PAGE_SIZE,
+                totalCount,
               },
             ],
           }
@@ -254,28 +267,22 @@ export default function AllItemsClient({
   const resolvedBookmark =
     animatingUrl && resultUrl ? (allBookmarks.find((b) => b.url === resultUrl) ?? null) : null;
 
-  // Optimistic total: server count + successful adds – successful deletes/archives
-  const addSuccessCount = addMutations.filter((m) => m.status === "success").length;
+  React.useEffect(() => {
+    if (!animatingUrl) return;
+    // If the user is on a tag filter that doesn't include the new bookmark,
+    // don't keep a skeleton placeholder around.
+    if (!latestAddAppliesToCurrentFilter) {
+      setAnimatingUrl(null);
+      return;
+    }
+    // if the mutation succeeded but the bookmark never appears in this list
+    if (latestAdd?.status === "success" && !resolvedBookmark) {
+      const t = window.setTimeout(() => setAnimatingUrl(null), 5000);
+      return () => window.clearTimeout(t);
+    }
+  }, [animatingUrl, latestAdd?.status, latestAddAppliesToCurrentFilter, resolvedBookmark]);
 
-  const deleteSuccessCount = useMutationState({
-    filters: {mutationKey: ["delete-bookmark"]},
-    select: (m) => {
-      if (m.state.status !== "success") return 0;
-      const vars = m.state.variables as string | string[];
-      return Array.isArray(vars) ? vars.length : 1;
-    },
-  }).reduce((sum, n) => sum + n, 0);
-
-  const archiveSuccessCount = useMutationState({
-    filters: {mutationKey: ["archive-bookmark"]},
-    select: (m) => {
-      if (m.state.status !== "success") return 0;
-      const vars = m.state.variables as string | string[];
-      return Array.isArray(vars) ? vars.length : 1;
-    },
-  }).reduce((sum, n) => sum + n, 0);
-
-  const currentTotalCount = totalCount + addSuccessCount - deleteSuccessCount - archiveSuccessCount;
+  const currentTotalCount = bookmarksQuery.data?.pages[0]?.totalCount ?? totalCount;
 
   const handleTransitionDone = React.useCallback(() => setAnimatingUrl(null), []);
 
@@ -377,6 +384,7 @@ export default function AllItemsClient({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({queryKey: ["bookmarks"]});
+      queryClient.invalidateQueries({queryKey: ["tags"]});
     },
     onError: (error) => {
       console.error("Failed to archive bookmark:", error);

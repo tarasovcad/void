@@ -36,6 +36,7 @@ export function DeleteBookmarkDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({queryKey: ["bookmarks"]});
+      queryClient.invalidateQueries({queryKey: ["tags"]});
     },
     onError: (error) => {
       console.error("Failed to delete bookmark:", error);

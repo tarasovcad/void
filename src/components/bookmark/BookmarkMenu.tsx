@@ -152,6 +152,7 @@ export function BookmarkMenu({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({queryKey: ["bookmarks"]});
+      queryClient.invalidateQueries({queryKey: ["tags"]});
       toastManager.add({
         title: "Bookmark updated",
         type: "success",
@@ -216,6 +217,7 @@ export function BookmarkMenu({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({queryKey: ["bookmarks"]});
+      queryClient.invalidateQueries({queryKey: ["tags"]});
       onOpenChange(false);
       toastManager.add({
         title: "Bookmark archived",

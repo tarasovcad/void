@@ -53,6 +53,7 @@ export function AddItemDialog() {
         type: "success",
       });
       queryClient.invalidateQueries({queryKey: ["bookmarks"]});
+      queryClient.invalidateQueries({queryKey: ["tags"]});
     },
     onError: (err) => {
       toastManager.add({
