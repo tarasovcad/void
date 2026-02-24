@@ -31,6 +31,7 @@ import {toastManager} from "@/components/coss-ui/toast";
 import {type Bookmark} from "@/components/bookmark/Bookmark";
 import {useMutation, useQueryClient} from "@tanstack/react-query";
 import TagsInput from "@/components/ui/TagsInput";
+import {useClipboardCopy} from "@/lib/useClipboardCopy";
 
 // Zod schema for bookmark form validation
 const bookmarkFormSchema = z.object({
@@ -289,19 +290,12 @@ export function BookmarkMenu({
     }
   }, [open, form]);
 
-  const [sourceCopied, setSourceCopied] = useState(false);
-  const sourceCopyTimeoutRef = useRef<number | null>(null);
+  const {copiedKey, copyText} = useClipboardCopy(2000);
+  const sourceCopied = copiedKey === "source";
 
   const handleCopySource = async () => {
     if (!data.source) return;
-
-    try {
-      await navigator.clipboard.writeText(data.source);
-      setSourceCopied(true);
-    } finally {
-      if (sourceCopyTimeoutRef.current) window.clearTimeout(sourceCopyTimeoutRef.current);
-      sourceCopyTimeoutRef.current = window.setTimeout(() => setSourceCopied(false), 2000);
-    }
+    await copyText(data.source, "source");
   };
 
   const handleSavePreview = () => {
@@ -309,12 +303,6 @@ export function BookmarkMenu({
     form.setValue("preview_image", newUrl, {shouldDirty: true});
     setPreviewDialogOpen(false);
   };
-
-  useEffect(() => {
-    return () => {
-      if (sourceCopyTimeoutRef.current) window.clearTimeout(sourceCopyTimeoutRef.current);
-    };
-  }, []);
 
   return (
     <>

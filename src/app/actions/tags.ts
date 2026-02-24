@@ -33,3 +33,23 @@ export async function getTags() {
     count: typeof t.count === "string" ? Number(t.count) : (t.count ?? 0),
   }));
 }
+
+export async function deleteTags(tagIds: string | string[]): Promise<{ok: true}> {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+
+  const ids = Array.isArray(tagIds) ? tagIds : [tagIds];
+
+  const supabase = await createClient();
+
+  const {error} = await supabase.from("tags").delete().in("id", ids).eq("user_id", session.user.id);
+
+  if (error) throw error;
+
+  return {ok: true};
+}
