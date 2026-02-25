@@ -31,7 +31,7 @@ const AppShell = ({
         />
         <div className="min-h-0 flex-1">{children}</div>
       </div>
-      <AddItemDialog />
+      <AddItemDialog collections={collections} />
       <CreateCollectionDialog open={createCollectionOpen} onOpenChange={setCreateCollectionOpen} />
     </main>
   );

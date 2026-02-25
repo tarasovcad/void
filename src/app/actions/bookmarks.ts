@@ -90,6 +90,7 @@ export async function fetchUrlMetadata(
 export async function addBookmark(input: {
   url: string;
   tags?: string[];
+  collectionId?: string;
 }): Promise<AddBookmarkResult> {
   const session = await auth.api.getSession({
     headers: await headers(),
@@ -146,6 +147,17 @@ export async function addBookmark(input: {
     });
     if (tagsError) {
       console.error("Failed to attach tags to bookmark:", tagsError);
+    }
+  }
+
+  // attach to collection if provided
+  if (input.collectionId) {
+    const {error: collectionError} = await supabase.from("bookmark_collections").insert({
+      bookmark_id: data.id,
+      collection_id: input.collectionId,
+    });
+    if (collectionError) {
+      console.error("Failed to attach bookmark to collection:", collectionError);
     }
   }
 

@@ -208,13 +208,13 @@ export default function AllItemsClient({
 
         switch (true) {
           case hasTag && hasCollection:
-            return "*, bookmark_tags!inner(tags!inner(name)), bookmark_collections!inner(collection_id)";
+            return "*, bookmark_tags!inner(tags!inner(name)), bookmark_collections!inner(collections(id, name))";
           case hasTag:
-            return "*, bookmark_tags!inner(tags!inner(name))";
+            return "*, bookmark_tags!inner(tags!inner(name)), bookmark_collections(collections(id, name))";
           case hasCollection:
-            return "*, bookmark_tags(tags(name)), bookmark_collections!inner(collection_id)";
+            return "*, bookmark_tags(tags(name)), bookmark_collections!inner(collections(id, name))";
           default:
-            return "*, bookmark_tags(tags(name))";
+            return "*, bookmark_tags(tags(name)), bookmark_collections(collections(id, name))";
         }
       };
 
@@ -247,12 +247,16 @@ export default function AllItemsClient({
       const {data, count, error} = await q.range(offset, offset + PAGE_SIZE - 1);
       if (error) throw error;
 
-      type BookmarkRowWithJoins = Bookmark & {bookmark_tags?: BookmarkTagJoinRow[] | null};
+      type BookmarkRowWithJoins = Bookmark & {
+        bookmark_tags?: BookmarkTagJoinRow[] | null;
+        bookmark_collections?: {collections: {id: string; name: string}}[] | null;
+      };
 
       const items: Bookmark[] = ((data ?? []) as unknown as BookmarkRowWithJoins[]).map(
-        ({bookmark_tags, ...bookmark}) => ({
+        ({bookmark_tags, bookmark_collections, ...bookmark}) => ({
           ...(bookmark as Bookmark),
           tags: tagNamesFromJoin(bookmark_tags),
+          collections: bookmark_collections?.map((bc) => bc.collections) ?? [],
         }),
       );
       const nextOffset = items.length < PAGE_SIZE ? undefined : offset + PAGE_SIZE;
@@ -559,7 +563,11 @@ export default function AllItemsClient({
         </div>
       )}
       {/* Toolbar */}
-      <div className="bg-background/90 sticky top-0 z-10 border-b px-6 py-3 backdrop-blur">
+      <div
+        className={cn(
+          "bg-background/90 sticky top-0 z-10 px-6 py-3 backdrop-blur",
+          activeCollection ? "" : "border-b",
+        )}>
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <TypeSelect value={typeFilter} onChange={setTypeFilter} />

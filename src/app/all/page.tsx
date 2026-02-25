@@ -17,7 +17,10 @@ type SearchParams = {
   collection?: string;
 };
 
-type BookmarkRowWithJoins = Bookmark & {bookmark_tags?: BookmarkTagJoinRow[] | null};
+type BookmarkRowWithJoins = Bookmark & {
+  bookmark_tags?: BookmarkTagJoinRow[] | null;
+  bookmark_collections?: {collections: {id: string; name: string}}[] | null;
+};
 type TagsWithCountsRow = {id: string; name: string; count: number | string | null};
 
 function normalizeTagParam(value: string | null | undefined) {
@@ -47,13 +50,13 @@ const AllItems = async (props: {searchParams?: Promise<SearchParams>}) => {
 
     switch (true) {
       case hasTag && hasCollection:
-        return "*, bookmark_tags!inner(tags!inner(name)), bookmark_collections!inner(collection_id)";
+        return "*, bookmark_tags!inner(tags!inner(name)), bookmark_collections!inner(collections(id, name))";
       case hasTag:
-        return "*, bookmark_tags!inner(tags!inner(name))";
+        return "*, bookmark_tags!inner(tags!inner(name)), bookmark_collections(collections(id, name))";
       case hasCollection:
-        return "*, bookmark_tags(tags(name)), bookmark_collections!inner(collection_id)";
+        return "*, bookmark_tags(tags(name)), bookmark_collections!inner(collections(id, name))";
       default:
-        return "*, bookmark_tags(tags(name))";
+        return "*, bookmark_tags(tags(name)), bookmark_collections(collections(id, name))";
     }
   };
 
@@ -89,12 +92,13 @@ const AllItems = async (props: {searchParams?: Promise<SearchParams>}) => {
 
   if (tagsError) console.error("Failed to fetch tags with counts:", tagsError);
 
-  const initialBookmarksWithTags: Bookmark[] = ((bookmarkRows ?? []) as BookmarkRowWithJoins[]).map(
-    ({bookmark_tags, ...bookmark}) => ({
-      ...(bookmark as Bookmark),
-      tags: tagNamesFromJoin(bookmark_tags),
-    }),
-  );
+  const initialBookmarksWithTags: Bookmark[] = (
+    (bookmarkRows ?? []) as unknown as BookmarkRowWithJoins[]
+  ).map(({bookmark_tags, bookmark_collections, ...bookmark}) => ({
+    ...(bookmark as Bookmark),
+    tags: tagNamesFromJoin(bookmark_tags),
+    collections: bookmark_collections?.map((bc) => bc.collections) ?? [],
+  }));
 
   const tags = ((tagsData ?? []) as TagsWithCountsRow[]).map((t) => ({
     id: t.id,

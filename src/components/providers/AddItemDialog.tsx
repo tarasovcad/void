@@ -3,11 +3,13 @@
 import React, {useState} from "react";
 import {useMutation, useQueryClient} from "@tanstack/react-query";
 import {z} from "zod";
+import {useForm, Controller} from "react-hook-form";
+import {zodResolver} from "@hookform/resolvers/zod";
 import {Button} from "@/components/coss-ui/button";
 import {Button as ShadcnButton} from "@/components/shadcn/button";
 import {Input} from "@/components/coss-ui/input";
 import {toastManager} from "@/components/coss-ui/toast";
-
+import {SearchIcon} from "lucide-react";
 import {
   Dialog,
   DialogClose,
@@ -20,29 +22,64 @@ import {
 import {addBookmark, type AddBookmarkResult} from "@/app/actions/bookmarks";
 import TagsInput from "../ui/TagsInput";
 import {Label} from "../coss-ui/label";
+import type {Collection} from "@/app/actions/collections";
+import {
+  Combobox,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxPopup,
+  ComboboxTrigger,
+  ComboboxValue,
+} from "@/components/coss-ui/combobox";
+import {SelectButton, Select} from "@/components/coss-ui/select";
 
-const addItemUrlSchema = z
-  .string()
-  .trim()
-  .min(1, "URL is required")
-  .url("Please enter a valid URL")
-  .refine((s) => {
-    try {
-      const u = new URL(s);
-      return u.protocol === "http:" || u.protocol === "https:";
-    } catch {
-      return false;
-    }
-  }, "URL must start with http:// or https://");
+const addItemSchema = z.object({
+  url: z
+    .string()
+    .trim()
+    .min(1, "URL is required")
+    .url("Please enter a valid URL")
+    .refine((s) => {
+      try {
+        const u = new URL(s);
+        return u.protocol === "http:" || u.protocol === "https:";
+      } catch {
+        return false;
+      }
+    }, "URL must start with http:// or https://"),
+  tags: z.array(z.string()),
+  collectionId: z.string().nullable().optional(),
+});
 
-export function AddItemDialog() {
+type AddItemFormValues = z.infer<typeof addItemSchema>;
+
+export function AddItemDialog({collections = []}: {collections?: Collection[]}) {
   const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
-  const [urlError, setUrlError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const addItemMutation = useMutation<AddBookmarkResult, Error, {url: string; tags: string[]}>({
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    formState: {errors, isValid},
+  } = useForm<AddItemFormValues>({
+    resolver: zodResolver(addItemSchema),
+    defaultValues: {
+      url: "",
+      tags: [],
+      collectionId: null,
+    },
+    mode: "onChange",
+  });
+
+  const addItemMutation = useMutation<
+    AddBookmarkResult,
+    Error,
+    {url: string; tags: string[]; collectionId?: string}
+  >({
     mutationKey: ["add-bookmark"],
     mutationFn: async (input) => {
       return await addBookmark(input);
@@ -70,25 +107,24 @@ export function AddItemDialog() {
     },
   });
 
-  const validateUrl = (rawUrl: string) => {
-    const parsed = addItemUrlSchema.safeParse(rawUrl);
-    if (!parsed.success) {
-      setUrlError(parsed.error.issues[0]?.message ?? "Invalid URL");
-      return null;
-    }
-    setUrlError(null);
-    return parsed.data;
+  const onSubmit = (data: AddItemFormValues) => {
+    setOpen(false);
+    addItemMutation.mutate({
+      url: data.url,
+      tags: data.tags,
+      collectionId: data.collectionId ?? undefined,
+    });
+    reset();
   };
 
-  const submit = () => {
-    const parsed = validateUrl(url);
-    if (!parsed) return;
-    setOpen(false);
-    setUrl("");
-    setTags([]);
-    setUrlError(null);
-    addItemMutation.mutate({url: parsed, tags});
-  };
+  const collectionItems = React.useMemo(
+    () =>
+      collections.map((c) => ({
+        label: c.name,
+        value: c.id,
+      })),
+    [collections],
+  );
 
   return (
     <div className="absolute right-6 bottom-6">
@@ -97,10 +133,7 @@ export function AddItemDialog() {
         onOpenChange={(nextOpen) => {
           setOpen(nextOpen);
           if (!nextOpen) {
-            // Keep the URL, but clear validation UI when closing the dialog.
-            setTimeout(() => {
-              setUrlError(null);
-            }, 1000);
+            reset();
           }
         }}>
         <ShadcnButton
@@ -130,38 +163,93 @@ export function AddItemDialog() {
 
           <DialogPanel>
             <form
+              id="add-item-form"
               className="flex flex-col gap-5"
-              onSubmit={(e) => {
-                e.preventDefault();
-                submit();
-              }}>
+              onSubmit={handleSubmit(onSubmit)}>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="url">URL</Label>
                 <Input
+                  id="url"
                   type="url"
                   placeholder="https://example.com"
-                  value={url}
-                  aria-invalid={!!urlError}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setUrl(next);
-                    if (urlError) validateUrl(next);
-                  }}
+                  {...register("url")}
+                  aria-invalid={!!errors.url}
                 />
-                {urlError ? (
+                {errors.url ? (
                   <div className="text-destructive text-sm" role="alert">
-                    {urlError}
+                    {errors.url.message}
                   </div>
                 ) : null}
               </div>
 
-              <TagsInput value={tags} onValueChange={setTags} name="tags" sortOnAdd={false} />
+              <div className="flex flex-col gap-2">
+                <Label>Collection</Label>
+                <Controller
+                  name="collectionId"
+                  control={control}
+                  render={({field}) => {
+                    const selectedItem =
+                      collectionItems.find((item) => item.value === field.value) ?? null;
+
+                    return (
+                      <Combobox
+                        items={collectionItems}
+                        value={selectedItem}
+                        onValueChange={(val) => {
+                          field.onChange(val?.value ?? null);
+                        }}>
+                        <Select>
+                          <ComboboxTrigger render={<SelectButton />}>
+                            <ComboboxValue placeholder="Select a collection" />
+                          </ComboboxTrigger>
+                        </Select>
+                        <ComboboxPopup
+                          aria-label="Select a collection"
+                          className="w-(--anchor-width)">
+                          <div className="border-b p-2">
+                            <ComboboxInput
+                              className="rounded-md before:rounded-[calc(var(--radius-md)-1px)]"
+                              placeholder="Search collections..."
+                              showTrigger={false}
+                              startAddon={<SearchIcon className="size-4" />}
+                            />
+                          </div>
+                          <ComboboxEmpty>No collections found.</ComboboxEmpty>
+                          <ComboboxList>
+                            {(item) => (
+                              <ComboboxItem key={item.value} value={item}>
+                                {item.label}
+                              </ComboboxItem>
+                            )}
+                          </ComboboxList>
+                        </ComboboxPopup>
+                      </Combobox>
+                    );
+                  }}
+                />
+              </div>
+
+              <Controller
+                name="tags"
+                control={control}
+                render={({field}) => (
+                  <TagsInput
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    name="tags"
+                    sortOnAdd={false}
+                  />
+                )}
+              />
             </form>
           </DialogPanel>
 
           <DialogFooter>
             <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-            <Button type="button" disabled={addItemMutation.isPending} onClick={submit}>
+            <Button
+              type="submit"
+              form="add-item-form"
+              disabled={addItemMutation.isPending || !isValid}>
               Submit
             </Button>
           </DialogFooter>

@@ -225,7 +225,9 @@ export function Sidebar({
             <div className="flex flex-col gap-0.5">
               {NAV_ITEMS.map((item) => {
                 const isAllItemsWithFilter =
-                  item.href === "/all" && pathname === "/all" && !!activeTag;
+                  item.href === "/all" &&
+                  pathname === "/all" &&
+                  (!!activeTag || !!searchParams.get("collection"));
                 const isActive = item.href === pathname && !isAllItemsWithFilter;
 
                 return (

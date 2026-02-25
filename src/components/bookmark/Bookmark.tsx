@@ -21,6 +21,7 @@ export type Bookmark = {
   deleted_at: string;
   notes: string;
   tags?: string[];
+  collections?: {id: string; name: string}[];
 };
 
 function BookmarkHoverActions({

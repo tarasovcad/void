@@ -29,9 +29,22 @@ import {
 } from "@/app/actions/bookmarks";
 import {toastManager} from "@/components/coss-ui/toast";
 import {type Bookmark} from "@/components/bookmark/Bookmark";
-import {useMutation, useQueryClient} from "@tanstack/react-query";
+import {useMutation, useQuery, useQueryClient} from "@tanstack/react-query";
 import TagsInput from "@/components/ui/TagsInput";
 import {useClipboardCopy} from "@/lib/useClipboardCopy";
+import {getCollections} from "@/app/actions/collections";
+import {SearchIcon} from "lucide-react";
+import {
+  Combobox,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxPopup,
+  ComboboxTrigger,
+  ComboboxValue,
+} from "@/components/coss-ui/combobox";
+import {SelectTrigger as SelectButton, Select} from "@/components/coss-ui/select";
 
 // Zod schema for bookmark form validation
 const bookmarkFormSchema = z.object({
@@ -40,6 +53,7 @@ const bookmarkFormSchema = z.object({
   preview_image: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   notes: z.string().max(1000, "Notes must be less than 1000 characters").optional(),
   tags: z.array(z.string()).max(10).default([]),
+  collectionId: z.string().nullable().optional(),
 });
 
 type BookmarkFormValues = z.input<typeof bookmarkFormSchema>;
@@ -75,6 +89,7 @@ export function BookmarkMenu({
       updated: formatDateWithTime(item?.updated_at ?? ""),
       preview_image: item?.preview_image,
       tags: item?.tags ?? [],
+      collections: item?.collections ?? [],
     };
   }, [item]);
 
@@ -87,8 +102,23 @@ export function BookmarkMenu({
       preview_image: item?.preview_image ?? "",
       notes: item?.notes ?? "",
       tags: item?.tags ?? [],
+      collectionId: item?.collections?.[0]?.id ?? null,
     },
   });
+
+  const {data: collections = []} = useQuery({
+    queryKey: ["collections"],
+    queryFn: async () => await getCollections(),
+  });
+
+  const collectionItems = useMemo(
+    () =>
+      collections.map((c) => ({
+        label: c.name,
+        value: c.id,
+      })),
+    [collections],
+  );
 
   const originalValues = useRef<BookmarkFormValues>({
     title: "",
@@ -96,6 +126,7 @@ export function BookmarkMenu({
     preview_image: "",
     notes: "",
     tags: [],
+    collectionId: null,
   });
 
   const titleElRef = useRef<HTMLHeadingElement | null>(null);
@@ -109,6 +140,7 @@ export function BookmarkMenu({
         preview_image: item.preview_image,
         notes: item.notes ?? "",
         tags: item.tags ?? [],
+        collectionId: item.collections?.[0]?.id ?? null,
       };
       form.reset(values);
       originalValues.current = values;
@@ -125,7 +157,8 @@ export function BookmarkMenu({
       (currentValues.preview_image ?? "") !== (originalValues.current.preview_image ?? "") ||
       (currentValues.notes ?? "") !== (originalValues.current.notes ?? "") ||
       normalizeTagsForCompare(currentValues.tags) !==
-        normalizeTagsForCompare(originalValues.current.tags)
+        normalizeTagsForCompare(originalValues.current.tags) ||
+      currentValues.collectionId !== originalValues.current.collectionId
     );
   }, [currentValues, item]);
 
@@ -525,6 +558,19 @@ export function BookmarkMenu({
                   <div className="text-muted-foreground">Type</div>
                   <div>{data.type}</div>
 
+                  {data.collections.length > 0 && (
+                    <>
+                      <div className="text-muted-foreground">Collection</div>
+                      <div className="flex flex-wrap gap-1">
+                        {data.collections.map((c) => (
+                          <span key={c.id} className="text-foreground">
+                            {c.name}
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
                   <div className="text-muted-foreground">Saved</div>
                   <div>{data.saved}</div>
 
@@ -535,6 +581,45 @@ export function BookmarkMenu({
                     </>
                   )}
                 </div>
+              </div>
+
+              <Separator />
+
+              <div className="p-6 text-[15px]">
+                <div className="mb-3 font-semibold">Collection</div>
+                <Combobox
+                  items={collectionItems}
+                  value={
+                    collectionItems.find((item) => item.value === currentValues.collectionId) ??
+                    null
+                  }
+                  onValueChange={(val) =>
+                    form.setValue("collectionId", val?.value ?? null, {shouldDirty: true})
+                  }>
+                  <Select>
+                    <ComboboxTrigger render={<SelectButton />}>
+                      <ComboboxValue placeholder="Select a collection" />
+                    </ComboboxTrigger>
+                  </Select>
+                  <ComboboxPopup aria-label="Select a collection" className="w-(--anchor-width)">
+                    <div className="border-b p-2">
+                      <ComboboxInput
+                        className="rounded-md before:rounded-[calc(var(--radius-md)-1px)]"
+                        placeholder="Search collections..."
+                        showTrigger={false}
+                        startAddon={<SearchIcon className="size-4" />}
+                      />
+                    </div>
+                    <ComboboxEmpty>No collections found.</ComboboxEmpty>
+                    <ComboboxList>
+                      {(item) => (
+                        <ComboboxItem key={item.value} value={item}>
+                          {item.label}
+                        </ComboboxItem>
+                      )}
+                    </ComboboxList>
+                  </ComboboxPopup>
+                </Combobox>
               </div>
 
               <Separator />
