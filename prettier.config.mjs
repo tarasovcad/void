@@ -1,0 +1,15 @@
+const prettierConfig = {
+  plugins: ["prettier-plugin-tailwindcss"],
+
+  arrowParens: "always",
+  bracketSameLine: true,
+  bracketSpacing: false,
+  singleQuote: false,
+  trailingComma: "all",
+  tabWidth: 2,
+  useTabs: false,
+  semi: true,
+  printWidth: 100,
+};
+
+export default prettierConfig;
