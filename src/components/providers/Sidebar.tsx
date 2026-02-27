@@ -35,6 +35,7 @@ import NumberFlow from "@number-flow/react";
 import {useClipboardCopy} from "@/lib/useClipboardCopy";
 import {SelectionActionBar} from "@/app/all/SelectionActionBar";
 import {DeleteTagDialog} from "./DeleteTagDialog";
+import {DeleteCollectionDialog} from "./DeleteCollectionDialog";
 import type {Collection} from "@/app/actions/collections";
 
 const NavItem = ({
@@ -161,6 +162,13 @@ export function Sidebar({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [tagsToDelete, setTagsToDelete] = useState<{id: string; name: string}[]>([]);
 
+  const [collectionSelectionMode, setCollectionSelectionMode] = useState(false);
+  const [selectedCollectionIds, setSelectedCollectionIds] = useState<Set<string>>(new Set());
+  const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
+  const [deleteCollectionDialogOpen, setDeleteCollectionDialogOpen] = useState(false);
+  const [collectionsToDelete, setCollectionsToDelete] = useState<{id: string; name: string}[]>([]);
+  const [collectionsSelectValue, setCollectionsSelectValue] = useState("all");
+
   // Exit tag selection mode on Escape
   useEffect(() => {
     if (!tagSelectionMode) return;
@@ -173,6 +181,19 @@ export function Sidebar({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [tagSelectionMode]);
+
+  // Exit collection selection mode on Escape
+  useEffect(() => {
+    if (!collectionSelectionMode) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setCollectionSelectionMode(false);
+        setSelectedCollectionIds(new Set());
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [collectionSelectionMode]);
 
   const {copyText} = useClipboardCopy(2000, {toast: true});
 
@@ -211,6 +232,32 @@ export function Sidebar({
     setTagsToDelete(selectedTags);
     setDeleteDialogOpen(true);
   }, [selectedTagIds, tags]);
+
+  const selectedCollectionCount = selectedCollectionIds.size;
+  const allCollectionsSelected = collections?.length
+    ? selectedCollectionCount === collections.length
+    : false;
+
+  const handleClearCollectionSelection = React.useCallback(() => {
+    setSelectedCollectionIds(new Set());
+    setCollectionSelectionMode(false);
+  }, []);
+
+  const handleSelectAllCollections = React.useCallback(() => {
+    if (allCollectionsSelected) {
+      setSelectedCollectionIds(new Set());
+    } else if (collections) {
+      setSelectedCollectionIds(new Set(collections.map((c) => c.id)));
+    }
+  }, [allCollectionsSelected, collections]);
+
+  const handleDeleteSelectedCollections = React.useCallback(() => {
+    if (!collections) return;
+    const selectedCols = collections.filter((c) => selectedCollectionIds.has(c.id));
+    if (selectedCols.length === 0) return;
+    setCollectionsToDelete(selectedCols);
+    setDeleteCollectionDialogOpen(true);
+  }, [selectedCollectionIds, collections]);
 
   const activeTag =
     searchParams.get("tag")?.trim().replace(/\s+/g, " ").toLowerCase() ??
@@ -279,7 +326,7 @@ export function Sidebar({
                     </span>
                   </div>
                   <div className="flex items-center gap-0.5">
-                    <Menu>
+                    <Menu open={collectionMenuOpen} onOpenChange={setCollectionMenuOpen}>
                       <MenuTrigger
                         type="button"
                         onClick={(e) => e.stopPropagation()}
@@ -312,11 +359,11 @@ export function Sidebar({
                       </MenuTrigger>
                       <MenuPopup align="center" className="w-40">
                         <MenuCheckboxItem
-                          checked={tagSelectionMode}
+                          checked={collectionSelectionMode}
                           onCheckedChange={(checked) => {
-                            setTagSelectionMode(checked);
-                            if (!checked) setSelectedTagIds(new Set());
-                            setTagMenuOpen(false);
+                            setCollectionSelectionMode(checked);
+                            if (!checked) setSelectedCollectionIds(new Set());
+                            setCollectionMenuOpen(false);
                           }}>
                           Select
                         </MenuCheckboxItem>
@@ -340,8 +387,8 @@ export function Sidebar({
                           </MenuSubTrigger>
                           <MenuSubPopup className="w-44">
                             <MenuRadioGroup
-                              value={tagsSelectValue}
-                              onValueChange={(v) => setTagsSelectValue(String(v))}>
+                              value={collectionsSelectValue}
+                              onValueChange={(v) => setCollectionsSelectValue(String(v))}>
                               <MenuRadioItem value="5">5 items</MenuRadioItem>
                               <MenuRadioItem value="10">10 items</MenuRadioItem>
                               <MenuRadioItem value="15">15 items</MenuRadioItem>
@@ -416,40 +463,193 @@ export function Sidebar({
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <AnimatePresence initial={false}>
+                    {collectionsExpanded && collections?.length === 0 && (
+                      <motion.div
+                        initial={false}
+                        animate={{opacity: 1, height: "auto", filter: "blur(0px)"}}
+                        exit={{opacity: 0, height: 0, filter: "blur(8px)"}}
+                        transition={{duration: 0.25, ease: "easeOut"}}>
+                        <button
+                          onClick={onCreateCollection}
+                          className={cn(
+                            "text-secondary bg-transparent",
+                            "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium",
+                            "hover:bg-muted hover:text-foreground",
+                            "cursor-pointer",
+                          )}>
+                          <span className="inline-flex size-5 shrink-0 items-center justify-center text-current">
+                            <svg
+                              width="20"
+                              height="20"
+                              viewBox="0 0 20 20"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg">
+                              <path
+                                fillRule="evenodd"
+                                clipRule="evenodd"
+                                d="M10 5C10.4602 5 10.8333 5.3731 10.8333 5.83333V9.16667H14.1667C14.6269 9.16667 15 9.53975 15 10C15 10.4602 14.6269 10.8333 14.1667 10.8333H10.8333V14.1667C10.8333 14.6269 10.4602 15 10 15C9.53975 15 9.16667 14.6269 9.16667 14.1667V10.8333H5.83333C5.3731 10.8333 5 10.4602 5 10C5 9.53975 5.3731 9.16667 5.83333 9.16667H9.16667V5.83333C9.16667 5.3731 9.53975 5 10 5Z"
+                                fill="currentColor"
+                              />
+                            </svg>
+                          </span>
+                          <span className="">Add collection</span>
+                        </button>
+                      </motion.div>
+                    )}
                     {collectionsExpanded &&
-                      collections?.map((c) => (
-                        <motion.div
-                          key={c.id}
-                          initial={false}
-                          animate={{opacity: 1, height: "auto", filter: "blur(0px)"}}
-                          exit={{opacity: 0, height: 0, filter: "blur(8px)"}}
-                          transition={{duration: 0.25, ease: "easeOut"}}>
-                          <NavItem
-                            href={`/all?collection=${c.id}`}
-                            isActive={
-                              pathname === "/all" && searchParams.get("collection") === c.id
-                            }
-                            icon={
-                              <span aria-hidden="true" className="text-base leading-none">
-                                <svg
-                                  width="20"
-                                  height="20"
-                                  viewBox="0 0 20 20"
-                                  fill="none"
-                                  xmlns="http://www.w3.org/2000/svg">
-                                  <path
-                                    fillRule="evenodd"
-                                    clipRule="evenodd"
-                                    d="M8.1801 5.20811C8.42024 4.93063 8.80956 4.93063 9.04971 5.20811L11.4597 7.99274C12.1801 8.8252 12.1801 10.1748 11.4597 11.0073L9.04971 13.7919C8.80956 14.0694 8.42024 14.0694 8.1801 13.7919C7.93997 13.5144 7.93997 13.0646 8.1801 12.7871L10.59 10.0024C10.8302 9.72492 10.8302 9.2751 10.59 8.99762L8.1801 6.21295C7.93997 5.93547 7.93997 5.48558 8.1801 5.20811Z"
-                                    fill="currentColor"
-                                  />
-                                </svg>
-                              </span>
-                            }
-                            label={c.name}
-                          />
-                        </motion.div>
-                      ))}
+                      collections?.map((c, index) => {
+                        const isActive =
+                          pathname === "/all" && searchParams.get("collection") === c.id;
+                        return (
+                          <motion.div
+                            key={c.id}
+                            initial={false}
+                            animate={{opacity: 1, height: "auto", filter: "blur(0px)"}}
+                            exit={{opacity: 0, height: 0, filter: "blur(8px)"}}
+                            transition={{duration: 0.25, ease: "easeOut"}}>
+                            <ContextMenu>
+                              <ContextMenuTrigger
+                                onClick={() => {
+                                  if (collectionSelectionMode) {
+                                    setSelectedCollectionIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(c.id)) next.delete(c.id);
+                                      else next.add(c.id);
+                                      return next;
+                                    });
+                                    return;
+                                  }
+                                  router.push(`/all?collection=${c.id}`);
+                                }}
+                                className={cn(
+                                  isActive
+                                    ? "text-foreground bg-[#F0F0F0] dark:bg-[#181717]"
+                                    : "text-secondary bg-transparent",
+                                  "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium",
+                                  "hover:bg-muted hover:text-foreground",
+                                  "cursor-pointer justify-between",
+                                )}>
+                                <div className="flex items-center">
+                                  <div
+                                    className={cn(
+                                      "grid shrink-0 items-center transition-[grid-template-columns,opacity] duration-200 ease-out",
+                                      collectionSelectionMode
+                                        ? "grid-cols-[1fr] opacity-100"
+                                        : "grid-cols-[0fr] opacity-0",
+                                    )}
+                                    style={{
+                                      transitionDelay: collectionSelectionMode
+                                        ? `${Math.min(index * 20, 120)}ms`
+                                        : "0ms",
+                                    }}>
+                                    <div className="min-w-0 overflow-hidden">
+                                      <div className="pr-2">
+                                        <Checkbox
+                                          checked={selectedCollectionIds.has(c.id)}
+                                          onCheckedChange={(checked) => {
+                                            setSelectedCollectionIds((prev) => {
+                                              const next = new Set(prev);
+                                              if (checked) next.add(c.id);
+                                              else next.delete(c.id);
+                                              return next;
+                                            });
+                                          }}
+                                          onClick={(e) => e.stopPropagation()}
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <span className="flex items-center gap-2 text-sm font-medium">
+                                    <span aria-hidden="true" className="text-base leading-none">
+                                      <svg
+                                        width="20"
+                                        height="20"
+                                        viewBox="0 0 20 20"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg">
+                                        <path
+                                          fillRule="evenodd"
+                                          clipRule="evenodd"
+                                          d="M8.1801 5.20811C8.42024 4.93063 8.80956 4.93063 9.04971 5.20811L11.4597 7.99274C12.1801 8.8252 12.1801 10.1748 11.4597 11.0073L9.04971 13.7919C8.80956 14.0694 8.42024 14.0694 8.1801 13.7919C7.93997 13.5144 7.93997 13.0646 8.1801 12.7871L10.59 10.0024C10.8302 9.72492 10.8302 9.2751 10.59 8.99762L8.1801 6.21295C7.93997 5.93547 7.93997 5.48558 8.1801 5.20811Z"
+                                          fill="currentColor"
+                                        />
+                                      </svg>
+                                    </span>
+                                    {c.name}
+                                  </span>
+                                </div>
+                              </ContextMenuTrigger>
+
+                              <ContextMenuContent>
+                                <Link href={`/all?collection=${c.id}`}>
+                                  <ContextMenuItem>
+                                    <svg
+                                      width="16"
+                                      height="16"
+                                      viewBox="0 0 16 16"
+                                      fill="none"
+                                      xmlns="http://www.w3.org/2000/svg">
+                                      <path
+                                        fillRule="evenodd"
+                                        clipRule="evenodd"
+                                        d="M8.00039 2.66667C10.4959 2.66669 12.9312 4.10717 14.6101 6.8632C15.0346 7.56 15.0346 8.44 14.6101 9.1368C12.9312 11.8929 10.4959 13.3333 8.00039 13.3333C5.50483 13.3333 3.06951 11.8928 1.39061 9.13673C0.966152 8.43993 0.966146 7.55993 1.39062 6.86313C3.06951 4.10709 5.50483 2.66665 8.00039 2.66667ZM5.5837 8C5.5837 6.66531 6.66568 5.58333 8.00039 5.58333C9.33506 5.58333 10.4171 6.66531 10.4171 8C10.4171 9.33467 9.33506 10.4167 8.00039 10.4167C6.66568 10.4167 5.5837 9.33467 5.5837 8Z"
+                                        fill="currentColor"
+                                      />
+                                    </svg>
+                                    Open
+                                  </ContextMenuItem>
+                                </Link>
+
+                                <ContextMenuItem
+                                  onClick={() => console.log("Rename collection:", c.name)}>
+                                  <svg
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 16 16"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg">
+                                    <path
+                                      fillRule="evenodd"
+                                      clipRule="evenodd"
+                                      d="M2.66699 3.83333C2.66699 2.45262 3.78628 1.33333 5.16699 1.33333H10.8337C12.2144 1.33333 13.3337 2.45262 13.3337 3.83333V8.44493C12.4141 8.11113 11.3438 8.31293 10.6063 9.0504L8.10633 11.5504C7.82506 11.8317 7.66699 12.2133 7.66699 12.6111V14.1666C7.66699 14.3419 7.69706 14.5103 7.75239 14.6667H5.16699C3.78628 14.6667 2.66699 13.5474 2.66699 12.1667V3.83333ZM5.33366 4.5C5.33366 4.22386 5.55752 4 5.83366 4H10.167C10.4431 4 10.667 4.22386 10.667 4.5C10.667 4.77614 10.4431 5 10.167 5H5.83366C5.55752 5 5.33366 4.77614 5.33366 4.5ZM5.83366 6.66667C5.55752 6.66667 5.33366 6.89053 5.33366 7.16667C5.33366 7.4428 5.55752 7.66667 5.83366 7.66667H7.50033C7.77646 7.66667 8.00033 7.4428 8.00033 7.16667C8.00033 6.89053 7.77646 6.66667 7.50033 6.66667H5.83366Z"
+                                      fill="currentColor"
+                                    />
+                                    <path
+                                      fillRule="evenodd"
+                                      clipRule="evenodd"
+                                      d="M12.869 10.4646C12.6347 10.2303 12.2549 10.2303 12.0205 10.4646L9.66699 12.8182V13.6666H10.5155L12.869 11.3131C13.1033 11.0788 13.1033 10.6989 12.869 10.4646ZM11.3135 9.75753C11.9383 9.13267 12.9513 9.13267 13.5761 9.75753C14.2009 10.3823 14.2009 11.3953 13.5761 12.0202L11.0761 14.5202C10.9823 14.6139 10.8551 14.6666 10.7225 14.6666H9.16699C8.89086 14.6666 8.66699 14.4427 8.66699 14.1666V12.6111C8.66699 12.4785 8.71966 12.3513 8.81346 12.2575L11.3135 9.75753Z"
+                                      fill="currentColor"
+                                    />
+                                  </svg>
+                                  Rename
+                                </ContextMenuItem>
+                                <ContextMenuSeparator />
+                                <ContextMenuItem
+                                  variant="destructive"
+                                  onClick={() => {
+                                    setCollectionsToDelete([{id: c.id, name: c.name}]);
+                                    setDeleteCollectionDialogOpen(true);
+                                  }}>
+                                  <svg
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 16 16"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg">
+                                    <path
+                                      fillRule="evenodd"
+                                      clipRule="evenodd"
+                                      d="M5.24601 3.33334H2.16699C1.89085 3.33334 1.66699 3.5572 1.66699 3.83334C1.66699 4.10948 1.89085 4.33334 2.16699 4.33334H2.66697C2.66699 4.34494 2.6674 4.35662 2.66822 4.36836L3.2281 12.3418C3.32005 13.6513 4.4092 14.6667 5.72196 14.6667H10.2787C11.5915 14.6667 12.6806 13.6513 12.7725 12.3418L13.3325 4.36836C13.3333 4.35662 13.3337 4.34494 13.3337 4.33334H13.8337C14.1098 4.33334 14.3337 4.10948 14.3337 3.83334C14.3337 3.5572 14.1098 3.33334 13.8337 3.33334H10.7547C10.4547 2.09005 9.33573 1.16667 8.00039 1.16667C6.66504 1.16667 5.54599 2.09005 5.24601 3.33334ZM6.29188 3.33334H9.70886C9.44219 2.65056 8.77752 2.16667 8.00039 2.16667C7.22319 2.16667 6.55853 2.65056 6.29188 3.33334ZM6.66699 6.50001C6.94313 6.50001 7.16699 6.72387 7.16699 7.00001V10.8333C7.16699 11.1095 6.94313 11.3333 6.66699 11.3333C6.39085 11.3333 6.16699 11.1095 6.16699 10.8333V7.00001C6.16699 6.72387 6.39085 6.50001 6.66699 6.50001ZM9.33366 6.50001C9.60979 6.50001 9.83366 6.72387 9.83366 7.00001V10.8333C9.83366 11.1095 9.60979 11.3333 9.33366 11.3333C9.05753 11.3333 8.83366 11.1095 8.83366 10.8333V7.00001C8.83366 6.72387 9.05753 6.50001 9.33366 6.50001Z"
+                                      fill="currentColor"
+                                    />
+                                  </svg>
+                                  Delete
+                                </ContextMenuItem>
+                              </ContextMenuContent>
+                            </ContextMenu>
+                          </motion.div>
+                        );
+                      })}
                   </AnimatePresence>
                 </div>
 
@@ -836,6 +1036,13 @@ export function Sidebar({
         onDeleted={handleClearSelection}
       />
 
+      <DeleteCollectionDialog
+        open={deleteCollectionDialogOpen}
+        onOpenChange={setDeleteCollectionDialogOpen}
+        collections={collectionsToDelete}
+        onDeleted={handleClearCollectionSelection}
+      />
+
       <SelectionActionBar
         visible={tagSelectionMode && selectedCount > 0}
         selectedCount={selectedCount}
@@ -843,6 +1050,18 @@ export function Sidebar({
         onClearSelection={handleClearSelection}
         onSelectAll={handleSelectAll}
         onDelete={handleDeleteSelected}
+        displayArchive={false}
+        displayFavorite={false}
+        displayCopy={false}
+      />
+
+      <SelectionActionBar
+        visible={collectionSelectionMode && selectedCollectionCount > 0}
+        selectedCount={selectedCollectionCount}
+        allSelected={allCollectionsSelected}
+        onClearSelection={handleClearCollectionSelection}
+        onSelectAll={handleSelectAllCollections}
+        onDelete={handleDeleteSelectedCollections}
         displayArchive={false}
         displayFavorite={false}
         displayCopy={false}

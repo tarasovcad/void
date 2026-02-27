@@ -24,10 +24,11 @@ import {DeleteBookmarkDialog} from "./DeleteBookmarkDialog";
 import {SelectionActionBar} from "./SelectionActionBar";
 import {archiveBookmarks} from "@/app/actions/bookmarks";
 import {tagNamesFromJoin, type BookmarkTagJoinRow} from "@/lib/bookmark-tags";
-import {useSearchParams} from "next/navigation";
+import {useSearchParams, useRouter} from "next/navigation";
 import type {Collection} from "@/app/actions/collections";
 import {getCollections} from "@/app/actions/collections";
 import {Button} from "@/components/coss-ui/button";
+import {DeleteCollectionDialog} from "@/components/providers/DeleteCollectionDialog";
 
 function normalizeTagParam(value: string | null | undefined) {
   const normalized = (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
@@ -58,6 +59,7 @@ export default function AllItemsClient({
   PAGE_SIZE: number;
 }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const tagFilter = normalizeTagParam(searchParams.get("tag") ?? searchParams.get("tab"));
   const collectionFilter = searchParams.get("collection");
 
@@ -102,6 +104,7 @@ export default function AllItemsClient({
   // ── Delete dialog state ──
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemsToDelete, setItemsToDelete] = useState<Bookmark[]>([]);
+  const [deleteCollectionDialogOpen, setDeleteCollectionDialogOpen] = useState(false);
 
   // ── Refs for infinite scroll ──
   const scrollAreaRootRef = React.useRef<HTMLDivElement | null>(null);
@@ -518,7 +521,7 @@ export default function AllItemsClient({
 
                 <span>
                   Last updated:{" "}
-                  {new Date(activeCollection.created_at).toLocaleDateString(undefined, {
+                  {new Date(activeCollection.created_at).toLocaleDateString("en-US", {
                     month: "long",
                     day: "numeric",
                     year: "numeric",
@@ -542,7 +545,9 @@ export default function AllItemsClient({
                 </svg>
                 Edit
               </Button>
-              <Button variant="destructive-outline">
+              <Button
+                variant="destructive-outline"
+                onClick={() => setDeleteCollectionDialogOpen(true)}>
                 <svg
                   width="16"
                   height="16"
@@ -620,6 +625,16 @@ export default function AllItemsClient({
         onOpenChange={setDeleteDialogOpen}
         items={itemsToDelete}
         onDeleted={handleClearSelection}
+      />
+      <DeleteCollectionDialog
+        open={deleteCollectionDialogOpen}
+        onOpenChange={setDeleteCollectionDialogOpen}
+        collections={
+          activeCollection ? [{id: activeCollection.id, name: activeCollection.name}] : []
+        }
+        onDeleted={() => {
+          router.push("/all");
+        }}
       />
       {/* Item count */}
       {!activeCollection && (

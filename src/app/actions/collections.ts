@@ -65,3 +65,25 @@ export async function createCollection(data: {
 
   return newCollection as Collection;
 }
+
+export async function deleteCollections(ids: string | string[]) {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+
+  const idsArray = Array.isArray(ids) ? ids : [ids];
+
+  const supabase = await createClient();
+  const {error} = await supabase
+    .from("collections")
+    .delete()
+    .in("id", idsArray)
+    .eq("user_id", session.user.id);
+
+  if (error) throw error;
+  return true;
+}
